@@ -1,0 +1,9 @@
+jupyterlab==4.4.*
+numpy==2.3.*
+pandas==2.3.*
+pyarrow==21.*
+matplotlib==3.10.*
+requests==2.32.*
+psycopg[binary]==3.2.*
+pgvector==0.4.*
+fastembed==0.7.*

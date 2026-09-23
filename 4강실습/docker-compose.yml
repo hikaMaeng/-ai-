@@ -1,8 +1,11 @@
-# 4강 실습 환경: pgvector + 한국어 형태소 분석기 + pgAdmin + 데이터 로더
+# 4강 실습 환경: pgvector + 한국어 형태소 분석기 + pgAdmin + JupyterLab + 데이터 로더
 #
-#   docker compose up -d --build        # DB와 pgAdmin 기동 (첫 빌드는 3~5분)
-#   docker compose run --rm loader      # 허깅페이스 KLUE-MRC 데이터셋 적재
+#   docker compose up -d --build        # DB · pgAdmin · Jupyter 기동 (첫 빌드는 3~5분)
+#   docker compose run --rm loader      # 허깅페이스 KLUE-MRC 데이터셋 적재 (4-1)
 #   docker compose down -v              # 전부 삭제(데이터 포함)하고 처음부터 다시
+#
+#   4-1 실습: pgAdmin  http://localhost:5050  → sql/ 의 SQL 파일
+#   4-2 실습: Jupyter  http://localhost:8888  → 4-2강실습/notebooks/ 의 노트북
 #
 name: ai4-lab
 
@@ -15,6 +18,17 @@ services:
       POSTGRES_USER: lab
       POSTGRES_PASSWORD: lab
       POSTGRES_DB: lab
+    # 벡터 인덱스 빌드 실습(4-2)용 설정
+    #   maintenance_work_mem : HNSW 그래프를 메모리 안에서 만들 크기 (부족하면 빌드가 매우 느려진다)
+    #   max_parallel_maintenance_workers : HNSW·IVFFlat 병렬 빌드
+    #   jit=off : 짧은 질의의 지연시간 측정에 잡음이 끼지 않게
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c maintenance_work_mem=1GB
+      -c max_parallel_maintenance_workers=4
+      -c jit=off
+    shm_size: 1g            # 병렬 빌드는 /dev/shm 을 쓴다. 도커 기본값 64MB 로는 실패한다
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:
@@ -49,6 +63,23 @@ services:
       - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
       - ./pgadmin/pgpass:/pgadmin4/pgpass.src:ro
       - ./sql:/var/lib/pgadmin/storage/pgadmin4_pgadmin.org/sql:ro   # 쿼리 도구에서 파일 열기
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # JupyterLab (4-2 실습). 저장소 루트 전체를 /work 로 연결해 강의 폴더를 모두 연다
+  jupyter:
+    build: ./jupyter
+    image: ai4-lab/jupyter
+    container_name: ai4-jupyter
+    environment:
+      DATABASE_URL: postgresql://lab:lab@db:5432/lab
+      HF_HOME: /cache/hf
+    ports:
+      - "${JUPYTER_PORT:-8888}:8888"
+    volumes:
+      - ..:/work            # 저장소 루트 (노트북에서 고친 내용이 호스트에 그대로 남는다)
+      - hfcache:/cache      # loader 와 같은 캐시: 데이터셋·임베딩 모델을 다시 받지 않는다
     depends_on:
       db:
         condition: service_healthy

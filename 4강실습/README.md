@@ -4,9 +4,12 @@
 > 준비물: **Docker Desktop**(실행 중) 하나. Python·PostgreSQL 설치는 필요 없습니다.
 > 소요 시간: **약 50분** (최초 이미지 빌드·데이터셋 다운로드 포함)
 
+> 4-2 실습(Jupyter 노트북)도 이 폴더의 docker-compose 로 함께 뜬다 → [4-2강실습](../4-2강실습/)
+
 ```
 4강실습/
-├─ docker-compose.yml        db · pgadmin · loader 3개 서비스
+├─ docker-compose.yml        db · pgadmin · jupyter · loader 4개 서비스
+├─ jupyter/                  4-2 실습용 JupyterLab 이미지 (http://localhost:8888)
 ├─ db/
 │  ├─ Dockerfile             pgvector(pg17) + mecab-ko + mecab-ko-dic + textsearch_ko
 │  └─ init/                  최초 기동 시 1회: 익스텐션 · 스키마(docs, questions)
@@ -53,6 +56,7 @@ docker compose up -d --build
 ```
 
 - 첫 실행은 이미지를 받고 mecab-ko 를 소스에서 컴파일합니다(12코어 1분 30초, 4코어 약 5분). 두 번째부터는 몇 초.
+- 4-2 실습용 Jupyter 이미지도 함께 빌드됩니다(캐시 없이 약 1분 30초). 4-1 만 할 때는 `docker compose up -d --build db pgadmin` 으로 건너뛸 수 있습니다.
 - Intel/AMD, Apple Silicon, Windows ARM 모두 동작합니다(`db/Dockerfile` 주석 참고).
 - 확인:
   ```bash
@@ -123,7 +127,7 @@ IDF(t)    = ln(1 + (N − df + 0.5)/(df + 0.5))
 
 | 증상 | 해결 |
 |---|---|
-| `port is already allocated` (5432/5050) | macOS/Linux: `DB_PORT=15432 PGADMIN_PORT=15050 docker compose up -d`<br>PowerShell: `$env:DB_PORT=15432; $env:PGADMIN_PORT=15050; docker compose up -d` |
+| `port is already allocated` (5432/5050/8888) | macOS/Linux: `DB_PORT=15432 PGADMIN_PORT=15050 JUPYTER_PORT=18888 docker compose up -d`<br>PowerShell: `$env:DB_PORT=15432; $env:PGADMIN_PORT=15050; $env:JUPYTER_PORT=18888; docker compose up -d` |
 | pgAdmin 이 안 열림 | 첫 기동은 20~30초 걸린다. `docker compose logs pgadmin` |
 | loader 가 `Connection refused` | `docker compose ps` 로 db 가 healthy 인지 확인 |
 | 25번에서 벡터 결과가 0 | 임베딩이 아직 진행 중. loader 창의 `완료` 확인 또는 `--embed-only` 재실행 |

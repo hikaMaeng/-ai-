@@ -4,3 +4,8 @@ __pycache__/
 .DS_Store
 Thumbs.db
 ~$*.pptx
+.ipynb_checkpoints/
+# 4-2 노트북 실행 산출물
+4-2강실습/notebooks/results/
+4-2강실습/notebooks/_out/
+4-2강실습/notebooks/prepare.log
