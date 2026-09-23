@@ -24,7 +24,8 @@
 │  ├─ 23_bm25_triggers.sql   문장 단위 트리거로 동적 갱신
 │  ├─ 24_bm25_trigger_test.sql  INSERT/UPDATE/DELETE 검증
 │  └─ 25_eval_all.sql        ts_rank vs BM25 vs 벡터 vs 하이브리드
-└─ slides/                   실습 장표(pptx)
+├─ slides/                   실습 장표(pptx · pdf)
+└─ 강의슬라이드_수정사항.md    원본 강의 장표의 수정할 문장 (슬라이드 번호별)
 ```
 
 ## 타임테이블 (60분)
