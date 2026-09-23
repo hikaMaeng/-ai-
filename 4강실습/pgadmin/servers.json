@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "lab (pgvector-ko)",
+      "Group": "4강실습",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "lab",
+      "Username": "lab",
+      "PassFile": "/var/lib/pgadmin/pgpass",
+      "SSLMode": "prefer"
+    }
+  }
+}

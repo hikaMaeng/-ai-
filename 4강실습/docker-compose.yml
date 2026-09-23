@@ -1,0 +1,73 @@
+# 4강 실습 환경: pgvector + 한국어 형태소 분석기 + pgAdmin + 데이터 로더
+#
+#   docker compose up -d --build        # DB와 pgAdmin 기동 (첫 빌드는 3~5분)
+#   docker compose run --rm loader      # 허깅페이스 KLUE-MRC 데이터셋 적재
+#   docker compose down -v              # 전부 삭제(데이터 포함)하고 처음부터 다시
+#
+name: ai4-lab
+
+services:
+  db:
+    build: ./db
+    image: ai4-lab/pgvector-ko:pg17
+    container_name: ai4-db
+    environment:
+      POSTGRES_USER: lab
+      POSTGRES_PASSWORD: lab
+      POSTGRES_DB: lab
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro   # 최초 1회: 익스텐션·스키마 생성
+      - ./sql:/sql:ro                              # 실습 SQL (psql -f /sql/... 로 실행)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lab -d lab"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  pgadmin:
+    image: dpage/pgadmin4:9
+    container_name: ai4-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: lab@example.com
+      PGADMIN_DEFAULT_PASSWORD: lab
+      # 로그인 화면 없이 바로 쓰는 데스크톱 모드
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    # libpq 는 권한이 0600 이 아닌 pgpass 를 무시한다.
+    # Windows 에서 마운트한 파일은 0777 로 보이므로 복사 후 chmod 해서 쓴다.
+    entrypoint: >
+      /bin/sh -c "cp /pgadmin4/pgpass.src /var/lib/pgadmin/pgpass
+      && chmod 600 /var/lib/pgadmin/pgpass
+      && exec /entrypoint.sh"
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./pgadmin/pgpass:/pgadmin4/pgpass.src:ro
+      - ./sql:/var/lib/pgadmin/storage/pgadmin4_pgadmin.org/sql:ro   # 쿼리 도구에서 파일 열기
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 데이터 적재 도구. up 으로는 뜨지 않고 run 으로 필요할 때만 실행한다.
+  loader:
+    build: ./loader
+    image: ai4-lab/loader
+    profiles: ["tools"]
+    environment:
+      DATABASE_URL: postgresql://lab:lab@db:5432/lab
+      HF_HOME: /cache/hf
+    volumes:
+      - hfcache:/cache   # 데이터셋·임베딩 모델 캐시 (재실행 시 다시 받지 않음)
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  pgadmin:
+  hfcache:

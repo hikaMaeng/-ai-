@@ -1,0 +1,4 @@
+# 컨테이너 안에서 읽는 파일(sql, Dockerfile, pgpass 등)이 CRLF 로 바뀌지 않도록
+* text=auto eol=lf
+*.pptx binary
+*.png binary
