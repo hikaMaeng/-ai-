@@ -1,17 +1,17 @@
--- BM25 역색인 : 테이블 5개 · 함수 · 트리거 4개 (컨테이너 최초 기동 시 1회)
+-- BM25 역색인 : 테이블 2개 · 함수 · 트리거 4개 (컨테이너 최초 기동 시 1회)
 --
 --   BM25(D, Q) = Σ_{t∈Q} IDF(t) · f(t,D)·(k1+1) / ( f(t,D) + k1·(1 − b + b·|D|/avgdl) )
 --   IDF(t)     = ln( 1 + (N − df(t) + 0.5) / (df(t) + 0.5) )        -- Lucene 변형
 --
---   공식에 필요한 값            →  저장할 테이블
---   f(t,D)  문서별 단어 빈도    →  bm25_tf     (term, doc_id, tf)   ← 역색인(inverted index)
---   |D|     문서 길이           →  bm25_doclen (doc_id, len)
---   N, avgdl                   →  bm25_stats  (n_docs, total_len)  ← 1행짜리 전역 통계
---   df(t)   단어가 나온 문서 수  →  bm25_df     (term, df)
---   IDF(t)                     →  bm25_idf    (term, idf)          ← df 와 N 으로 계산해 둔 캐시
+--   공식에 필요한 값                      어디서
+--   f(t,D)  문서별 단어 빈도(tf)         bm25_tf (term, doc_id, tf)   ← 역색인. 트리거가 관리
+--   df(t)   단어가 나온 문서 수          bm25_df (term, df)           ← 트리거가 관리
+--   |D|     문서 길이                    docs.doclen                  ← 생성 컬럼 (02_schema.sql)
+--   N, avgdl                            검색할 때 docs 에서 count(*), avg(doclen)
+--   IDF(t)                              검색할 때 df 와 N 으로 계산
 --
---   모든 값은 docs.tsv(형태소 분석 결과) 에서 뽑는다.
---   docs 에 INSERT · UPDATE · DELETE · TRUNCATE 가 일어나면 트리거가 이 테이블들을 자동으로 맞춘다.
+--   저장하는 것은 "문서가 바뀔 때만 바뀌고, 매번 세기엔 비싼 값"(tf, df)뿐이다.
+--   N · avgdl · IDF 는 검색 쿼리 한 번에 바로 계산되므로 따로 저장해 맞출 필요가 없다.
 
 -- ── 테이블 ──────────────────────────────────────────────────────────
 CREATE TABLE bm25_tf (
@@ -22,102 +22,54 @@ CREATE TABLE bm25_tf (
 );
 CREATE INDEX bm25_tf_doc ON bm25_tf (doc_id);    -- 문서 삭제·수정 때 그 문서의 행을 찾는다
 
-CREATE TABLE bm25_doclen (
-    doc_id bigint PRIMARY KEY,
-    len    int    NOT NULL                       -- 그 문서의 tf 합 (조사·어미가 빠진 형태소 수)
-);
-
 CREATE TABLE bm25_df (
     term text PRIMARY KEY,
     df   int  NOT NULL
 );
 
-CREATE TABLE bm25_idf (
-    term text   PRIMARY KEY,
-    idf  float8 NOT NULL
-);
-
-CREATE TABLE bm25_stats (
-    id        int    PRIMARY KEY DEFAULT 1 CHECK (id = 1),   -- 항상 1행
-    n_docs    bigint NOT NULL DEFAULT 0,
-    total_len bigint NOT NULL DEFAULT 0
-);
-INSERT INTO bm25_stats DEFAULT VALUES;
-
 -- ── 검색 함수 ────────────────────────────────────────────────────────
 --   질의도 문서와 똑같이 to_tsvector('korean', ...) 로 형태소 분석한다
---   역색인에서 질의어가 있는 행만 읽으므로 전체 문서를 훑지 않는다
+--   s  : N 과 avgdl 을 docs 에서 한 번 계산
+--   w  : 질의어별 IDF 를 df 와 N 으로 계산
+--   본문 : 질의어가 든 bm25_tf 행만 읽어 문서별로 점수 합산 (전체 문서를 훑지 않는다)
 CREATE FUNCTION bm25_search(q text, k int DEFAULT 10,
                             k1 float8 DEFAULT 1.2, b float8 DEFAULT 0.75)
 RETURNS TABLE (doc_id bigint, score float8)
 LANGUAGE sql STABLE AS $$
-  WITH qt AS (SELECT DISTINCT lexeme AS term FROM unnest(to_tsvector('korean', q))),
-       s  AS (SELECT total_len::float8 / greatest(n_docs, 1) AS avgdl FROM bm25_stats)
+  WITH s  AS (SELECT count(*)::float8 AS n, avg(doclen)::float8 AS avgdl FROM docs),
+       qt AS (SELECT DISTINCT lexeme AS term FROM unnest(to_tsvector('korean', q))),
+       w  AS (SELECT qt.term, ln(1 + (s.n - d.df + 0.5) / (d.df + 0.5)) AS idf
+              FROM qt JOIN bm25_df d ON d.term = qt.term CROSS JOIN s)
   SELECT t.doc_id,
-         sum(i.idf * t.tf * (k1 + 1) / (t.tf + k1 * (1 - b + b * dl.len / s.avgdl))) AS score
-  FROM qt
-  JOIN bm25_tf     t  ON t.term = qt.term
-  JOIN bm25_idf    i  ON i.term = qt.term
-  JOIN bm25_doclen dl ON dl.doc_id = t.doc_id
+         sum(w.idf * t.tf * (k1 + 1) / (t.tf + k1 * (1 - b + b * d.doclen / s.avgdl))) AS score
+  FROM w
+  JOIN bm25_tf t ON t.term = w.term
+  JOIN docs    d ON d.id   = t.doc_id
   CROSS JOIN s
   GROUP BY t.doc_id
   ORDER BY score DESC
   LIMIT k
 $$;
 
--- ── IDF 계산 ────────────────────────────────────────────────────────
--- 전체 재계산 : N 이 바뀌면 원칙적으로 모든 단어의 IDF 가 바뀐다
-CREATE FUNCTION bm25_refresh_idf() RETURNS void
-LANGUAGE sql AS $$
-  TRUNCATE bm25_idf;
-  INSERT INTO bm25_idf (term, idf)
-  SELECT d.term, ln(1 + (s.n_docs - d.df + 0.5) / (d.df + 0.5))
-  FROM bm25_df d, bm25_stats s;
-$$;
-
--- 부분 재계산 : 트리거가 건드린 단어만 최신 N 으로
---   (임시 테이블을 참조하므로 plpgsql. sql 함수는 만들 때 테이블 존재를 검사한다)
-CREATE FUNCTION bm25_touch_idf() RETURNS void
-LANGUAGE plpgsql AS $$
-BEGIN
-  INSERT INTO bm25_idf (term, idf)
-  SELECT d.term, ln(1 + (s.n_docs - d.df + 0.5) / (d.df + 0.5))
-  FROM bm25_df d, bm25_stats s
-  WHERE d.term IN (SELECT t.lexeme FROM _bm25_new n, unnest(n.tsv) t
-                   UNION
-                   SELECT t.lexeme FROM _bm25_old o, unnest(o.tsv) t)
-  ON CONFLICT (term) DO UPDATE SET idf = EXCLUDED.idf;
-END $$;
-
 -- ── 문서 집합을 역색인에서 빼기 / 더하기 ─────────────────────────────
 --   빼거나 더할 문서는 트리거가 임시 테이블 _bm25_old / _bm25_new 에 넣어 넘긴다
 CREATE FUNCTION bm25_remove_docs() RETURNS void
 LANGUAGE plpgsql AS $$
 BEGIN
-  -- 그 문서들의 tf 행 삭제 → 삭제된 단어별로 df 감소
+  -- 그 문서들의 tf 행 삭제 → 삭제된 단어별로 df 감소 → 더 이상 어떤 문서에도 없는 단어는 제거
   WITH del AS (
     DELETE FROM bm25_tf t USING _bm25_old o WHERE t.doc_id = o.id RETURNING t.term
   ), cnt AS (
     SELECT term, count(*) AS c FROM del GROUP BY term
   )
   UPDATE bm25_df d SET df = d.df - cnt.c FROM cnt WHERE d.term = cnt.term;
-
-  -- 더 이상 어떤 문서에도 없는 단어는 사전에서 제거
-  DELETE FROM bm25_idf i USING bm25_df d WHERE i.term = d.term AND d.df <= 0;
   DELETE FROM bm25_df WHERE df <= 0;
-
-  -- 문서 길이 · 전역 통계
-  WITH del AS (
-    DELETE FROM bm25_doclen l USING _bm25_old o WHERE l.doc_id = o.id RETURNING l.len
-  )
-  UPDATE bm25_stats
-     SET n_docs    = n_docs    - (SELECT count(*) FROM del),
-         total_len = total_len - (SELECT coalesce(sum(len), 0) FROM del);
 END $$;
 
 CREATE FUNCTION bm25_add_docs() RETURNS void
 LANGUAGE plpgsql AS $$
 BEGIN
+  -- tsv 를 풀면 (형태소, 위치 목록) → 위치 개수가 tf
   INSERT INTO bm25_tf (term, doc_id, tf)
   SELECT t.lexeme, n.id, cardinality(t.positions)
   FROM _bm25_new n, unnest(n.tsv) t;
@@ -127,16 +79,6 @@ BEGIN
   FROM _bm25_new n, unnest(n.tsv) t
   GROUP BY t.lexeme
   ON CONFLICT (term) DO UPDATE SET df = bm25_df.df + EXCLUDED.df;
-
-  WITH ins AS (
-    INSERT INTO bm25_doclen (doc_id, len)
-    SELECT n.id, coalesce((SELECT sum(cardinality(t.positions)) FROM unnest(n.tsv) t), 0)
-    FROM _bm25_new n
-    RETURNING len
-  )
-  UPDATE bm25_stats
-     SET n_docs    = n_docs    + (SELECT count(*) FROM ins),
-         total_len = total_len + (SELECT coalesce(sum(len), 0) FROM ins);
 END $$;
 
 -- ── 트리거 함수 ──────────────────────────────────────────────────────
@@ -173,16 +115,14 @@ BEGIN
 
   PERFORM bm25_remove_docs();
   PERFORM bm25_add_docs();
-  PERFORM bm25_touch_idf();
   RETURN NULL;
 END $$;
 
--- TRUNCATE 는 행 트리거·DELETE 트리거를 부르지 않는다 → 역색인도 통째로 비운다
+-- TRUNCATE 는 DELETE 트리거를 부르지 않는다 → 역색인도 통째로 비운다
 CREATE FUNCTION bm25_truncate() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
-  TRUNCATE bm25_tf, bm25_doclen, bm25_df, bm25_idf;
-  UPDATE bm25_stats SET n_docs = 0, total_len = 0;
+  TRUNCATE bm25_tf, bm25_df;
   RETURN NULL;
 END $$;
 
@@ -207,13 +147,8 @@ CREATE TRIGGER bm25_sync_trunc AFTER TRUNCATE ON docs
 CREATE FUNCTION bm25_rebuild() RETURNS void
 LANGUAGE plpgsql AS $$
 BEGIN
-  TRUNCATE bm25_tf, bm25_doclen, bm25_df, bm25_idf;
+  TRUNCATE bm25_tf, bm25_df;
   INSERT INTO bm25_tf (term, doc_id, tf)
     SELECT t.lexeme, d.id, cardinality(t.positions) FROM docs d, unnest(d.tsv) t;
-  INSERT INTO bm25_doclen (doc_id, len)
-    SELECT d.id, coalesce((SELECT sum(cardinality(t.positions)) FROM unnest(d.tsv) t), 0) FROM docs d;
-  UPDATE bm25_stats SET n_docs = (SELECT count(*) FROM bm25_doclen),
-                        total_len = (SELECT coalesce(sum(len), 0) FROM bm25_doclen);
   INSERT INTO bm25_df (term, df) SELECT term, count(*) FROM bm25_tf GROUP BY term;
-  PERFORM bm25_refresh_idf();
 END $$;
