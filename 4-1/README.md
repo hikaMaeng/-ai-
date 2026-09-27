@@ -16,7 +16,7 @@
 │  └─ 01b_진행확인.ipynb      임베딩 진행 건수 확인 (적재 중 다른 탭에서)
 ├─ db/
 │  ├─ Dockerfile             pgvector(pg17) + mecab-ko + mecab-ko-dic + textsearch_ko
-│  └─ init/                  최초 기동 시 1회: 익스텐션 · 스키마(docs, questions)
+│  └─ init/                  최초 기동 시 1회: 01 익스텐션 · 02 스키마(docs, questions) · 03 BM25 역색인(테이블 5 · 트리거 4)
 ├─ pgadmin/                  서버 자동 등록(servers.json) · 비밀번호 파일(pgpass)
 ├─ loader/load.py            (서비스 아님) 4-2 의 prepare_klue.py 가 모듈로 불러 쓰는 예전 적재 코드
 ├─ sql/                      실습 SQL (번호 순서대로)
@@ -105,7 +105,7 @@ http://localhost:8888 → `4-1` → `notebooks` → `01_데이터적재_임베�
 - 이어서 : **셀 6** 클릭 → **Run → Run Selected Cell and All Below** (Run All Cells 는 셀 5 에서 테이블을 다시 비운다)
 - 진행 확인 : `01b_진행확인.ipynb` (커널이 따로라 임베딩 중에도 실행된다). 탭을 새로 고치면 적재 노트북의 진행 출력은 멈춘 것처럼 보여도 계산은 계속된다
 - 허깅페이스 [klue/klue](https://huggingface.co/datasets/klue/klue) 의 `mrc` validation (CC BY-SA 4.0). 뉴스(한국경제·아크로팬)와 위키백과 지문 **5,309개**, 질문·정답 **5,841개**
-- 실측(Qwen3-Embedding-8B Q4_K_M, LM Studio, 배치 16): 텍스트 적재 약 10~15초, 지문 약 0.5~0.6건/s(전체 약 2시간 30분~3시간), 질문 약 5건/s(약 20분)
+- 실측(Qwen3-Embedding-8B Q4_K_M, LM Studio, 배치 16): 텍스트 적재 약 45초(BM25 트리거가 역색인까지 채움), 지문 약 0.5~0.6건/s(전체 약 2시간 30분~3시간), 질문 약 5건/s(약 20분)
 
 ## ④ ts_rank 실습 — `sql/10` ~ `sql/14`
 
@@ -118,6 +118,9 @@ http://localhost:8888 → `4-1` → `notebooks` → `01_데이터적재_임베�
 | 14 | 질문 500개 Hit@10 : AND 0.05 / OR ts_rank 0.48 / ts_rank_cd 0.52 (결과는 `eval_result` 에 저장) |
 
 ## ⑤ BM25 직접 구현 — `sql/20` ~ `sql/24`
+
+> BM25 역색인 테이블 · 함수 · 트리거(INSERT · UPDATE · DELETE · TRUNCATE)는 이제 `db/init/03_bm25.sql` 이 DB 최초 기동 때 설치한다.
+> 아래 SQL 실습은 노트북으로 옮기는 중이며, 옮기기 전까지는 설치된 것을 다시 만드는 과정으로 본다.
 
 ```
 BM25(D,Q) = Σ IDF(t) · tf·(k1+1) / (tf + k1·(1 − b + b·|D|/avgdl))
