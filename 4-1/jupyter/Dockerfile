@@ -7,6 +7,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends fonts-nanum \
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
+# JupyterLab 기본 설정: 노트북의 모든 셀을 항상 그린다(windowing 끔)
+#   기본값은 화면 밖 셀을 그리지 않아, 탭을 다시 열면 노트북이 빈 화면으로 보이는 일이 있다
+RUN mkdir -p /usr/local/share/jupyter/lab/settings \
+ && printf '{"@jupyterlab/notebook-extension:tracker": {"windowingMode": "none"}}\n' \
+      > /usr/local/share/jupyter/lab/settings/overrides.json
+
 # /work = 저장소 루트 (compose 에서 마운트). 4-1 의 load.py 를 노트북에서 import 할 수 있게 한다
 ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/work/4-1/loader \

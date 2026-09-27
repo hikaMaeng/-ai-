@@ -10,8 +10,8 @@
 # 포트는 전부 127.0.0.1 에만 연다. 로그인 없는 pgAdmin·Jupyter 를 같은 Wi-Fi 의 다른 기기가 열지 못하게.
 #
 # 임베딩은 호스트(내 PC)에서 도는 LM Studio 서버가 계산한다.
-#   컨테이너 안의 localhost 는 컨테이너 자신이므로 host.docker.internal 로 호스트에 닿는다.
-#   LM Studio 포트가 1234 가 아니면: LMSTUDIO_URL=http://host.docker.internal:<포트>/v1
+#   컨테이너 안의 localhost 는 컨테이너 자신이므로 노트북은 host.docker.internal 로 호스트에 닿는다.
+#   LM Studio 주소·포트는 노트북 셀 1 의 LMSTUDIO_URL 에서 바꾼다.
 #
 name: ai4-lab
 
@@ -79,7 +79,6 @@ services:
     image: ai4-lab/jupyter
     container_name: ai4-jupyter
     environment:
-      LMSTUDIO_URL: ${LMSTUDIO_URL:-http://host.docker.internal:1234/v1}   # 임베딩 서버(LM Studio)
       DATABASE_URL: postgresql://lab:lab@db:5432/lab
       HF_HOME: /cache/hf
     extra_hosts:
