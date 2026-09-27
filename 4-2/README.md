@@ -26,7 +26,7 @@
 └─ 강의슬라이드_수정사항.md           원본 강의 장표의 수정할 문장 (슬라이드 번호별, 실측 근거)
 
 4-1/
-├─ docker-compose.yml               db · pgadmin · jupyter · loader
+├─ docker-compose.yml               db · jupyter · pgadmin
 └─ jupyter/                         JupyterLab 이미지 (numpy · matplotlib · psycopg · fastembed · 나눔 글꼴)
 ```
 
@@ -51,7 +51,7 @@ docker compose up -d --build
 
 - 4-1 을 이미 했다면 Jupyter 이미지만 새로 빌드되고, db 는 설정(인덱스 빌드용 메모리)이 바뀌어 **재생성되지만 데이터는 그대로**다
 - 처음이라면 db 이미지(mecab-ko 컴파일)까지 빌드한다 → 4-1 README ① 참고
-- 브라우저로 **http://localhost:8888** → `4-2/notebooks` 가 바로 열린다 (로그인 없음)
+- 브라우저로 **http://localhost:8888** → 저장소 폴더가 열린다. `4-2/notebooks` 로 들어간다 (로그인 없음)
 - 셀 실행: `Shift + Enter`. 노트북 전체 실행: 메뉴 **Run → Run All Cells**
 
 ## ② 1부 — 인덱스 원리를 numpy 로 (10 ~ 13)

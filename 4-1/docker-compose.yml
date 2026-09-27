@@ -1,11 +1,11 @@
-# 4강 실습 환경: pgvector + 한국어 형태소 분석기 + pgAdmin + JupyterLab + 데이터 로더
+# 4강 실습 환경: pgvector + 한국어 형태소 분석기 + JupyterLab + pgAdmin
 #
-#   docker compose up -d --build        # DB · pgAdmin · Jupyter 기동 (첫 빌드는 3~5분)
-#   docker compose run --rm loader      # 허깅페이스 KLUE-MRC 데이터셋 적재 (4-1)
+#   docker compose up -d --build        # DB · Jupyter · pgAdmin 기동 (첫 빌드는 3~5분)
 #   docker compose down -v              # 전부 삭제(데이터 포함)하고 처음부터 다시
 #
-#   4-1 실습: pgAdmin  http://localhost:5050  → sql/ 의 SQL 파일
-#   4-2 실습: Jupyter  http://localhost:8888  → 4-2/notebooks/ 의 노트북
+#   실습 화면: Jupyter  http://localhost:8888  → 4-1/notebooks · 4-2/notebooks
+#     데이터 적재 · 임베딩 서버 호출 · 검색 실험은 전부 노트북(클라이언트)에서 한다
+#   보조 화면: pgAdmin  http://localhost:5050  → DB 내용을 눈으로 확인
 #
 # 포트는 전부 127.0.0.1 에만 연다. 로그인 없는 pgAdmin·Jupyter 를 같은 Wi-Fi 의 다른 기기가 열지 못하게.
 #
@@ -14,10 +14,6 @@
 #   LM Studio 포트가 1234 가 아니면: LMSTUDIO_URL=http://host.docker.internal:<포트>/v1
 #
 name: ai4-lab
-
-# 임베딩 서버(LM Studio) 접속 설정. jupyter · loader 가 함께 쓴다
-x-lmstudio: &lmstudio
-  LMSTUDIO_URL: ${LMSTUDIO_URL:-http://host.docker.internal:1234/v1}
 
 services:
   db:
@@ -77,13 +73,13 @@ services:
       db:
         condition: service_healthy
 
-  # JupyterLab (4-2 실습). 저장소 루트 전체를 /work 로 연결해 강의 폴더를 모두 연다
+  # JupyterLab (4-1·4-2 공통 실습 화면). 저장소 루트 전체를 /work 로 연결해 강의 폴더를 모두 연다
   jupyter:
     build: ./jupyter
     image: ai4-lab/jupyter
     container_name: ai4-jupyter
     environment:
-      <<: *lmstudio
+      LMSTUDIO_URL: ${LMSTUDIO_URL:-http://host.docker.internal:1234/v1}   # 임베딩 서버(LM Studio)
       DATABASE_URL: postgresql://lab:lab@db:5432/lab
       HF_HOME: /cache/hf
     extra_hosts:
@@ -92,24 +88,7 @@ services:
       - "127.0.0.1:${JUPYTER_PORT:-8888}:8888"
     volumes:
       - ..:/work            # 저장소 루트 (노트북에서 고친 내용이 호스트에 그대로 남는다)
-      - hfcache:/cache      # loader 와 같은 캐시: 데이터셋·임베딩 모델을 다시 받지 않는다
-    depends_on:
-      db:
-        condition: service_healthy
-
-  # 데이터 적재 도구. up 으로는 뜨지 않고 run 으로 필요할 때만 실행한다.
-  loader:
-    build: ./loader
-    image: ai4-lab/loader
-    profiles: ["tools"]
-    environment:
-      <<: *lmstudio
-      DATABASE_URL: postgresql://lab:lab@db:5432/lab
-      HF_HOME: /cache/hf
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - hfcache:/cache   # 데이터셋·임베딩 모델 캐시 (재실행 시 다시 받지 않음)
+      - hfcache:/cache      # 데이터셋 캐시: 컨테이너를 지워도 남아 다시 받지 않는다
     depends_on:
       db:
         condition: service_healthy

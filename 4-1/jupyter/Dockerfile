@@ -17,4 +17,4 @@ WORKDIR /work
 CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", \
      "--IdentityProvider.token=", "--ServerApp.password=", \
      "--ServerApp.root_dir=/work", \
-     "--LabApp.default_url=/lab/tree/4-2/notebooks"]
+     "--LabApp.default_url=/lab"]

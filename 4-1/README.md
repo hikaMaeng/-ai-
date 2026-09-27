@@ -1,20 +1,23 @@
 # 4강 실습 — pgvector · 한국어 전문검색 · BM25 직접 구현
 
 > 현대 AI의 원리와 구조 #4-1 벡터디비 실습 · 뉴런데브클래스
-> 준비물: **Docker Desktop**(실행 중) 하나. Python·PostgreSQL 설치는 필요 없습니다.
-> 소요 시간: **약 50분** (최초 이미지 빌드·데이터셋 다운로드 포함)
-
-> 4-2 실습(Jupyter 노트북)도 이 폴더의 docker-compose 로 함께 뜬다 → [4-2](../4-2/)
+> 준비물: **Docker Desktop**(실행 중) · **LM Studio**(Qwen3-Embedding-8B 로드, 서버 켬). Python·PostgreSQL 설치는 필요 없습니다.
+> 실습 화면은 **Jupyter 노트북**(http://localhost:8888) 하나. 데이터 적재 · 임베딩 서버 호출 · 검색 실험을 전부 노트북에서 한다.
+> 4-2 실습도 이 폴더의 docker-compose 로 함께 뜬다 → [4-2](../4-2/)
+>
+> 진행 중: ④~⑥ 의 SQL 실습(sql/10~25)을 노트북으로 옮기는 중이다. 옮기기 전까지는 pgAdmin 에서 SQL 파일로 실행한다.
 
 ```
 4-1/
-├─ docker-compose.yml        db · pgadmin · jupyter · loader 4개 서비스
-├─ jupyter/                  4-2 실습용 JupyterLab 이미지 (http://localhost:8888)
+├─ docker-compose.yml        db · jupyter · pgadmin 3개 서비스
+├─ jupyter/                  4-1·4-2 공통 JupyterLab 이미지 (http://localhost:8888)
+├─ notebooks/
+│  └─ 01_데이터적재_임베딩.ipynb  KLUE-MRC 적재 → LM Studio 배치 임베딩 → emb128 HNSW
 ├─ db/
 │  ├─ Dockerfile             pgvector(pg17) + mecab-ko + mecab-ko-dic + textsearch_ko
 │  └─ init/                  최초 기동 시 1회: 익스텐션 · 스키마(docs, questions)
 ├─ pgadmin/                  서버 자동 등록(servers.json) · 비밀번호 파일(pgpass)
-├─ loader/load.py            허깅페이스 KLUE-MRC → 형태소 분석 → COPY → 임베딩 → HNSW
+├─ loader/load.py            (서비스 아님) 4-2 의 prepare_klue.py 가 모듈로 불러 쓰는 예전 적재 코드
 ├─ sql/                      실습 SQL (번호 순서대로)
 │  ├─ 10_tokenize.sql        형태소 분석 · tsvector · setweight
 │  ├─ 11_ts_rank.sql         가중치 · 포화 · AND/OR 질의
@@ -35,17 +38,16 @@
 
 | 시간 | 단계 | 하는 일 | 대기 시간 |
 |---|---|---|---|
-| 00–10 | ① 환경 기동 | `docker compose up -d --build` → 빌드 동안 Dockerfile·compose 설명 | 빌드 **1.5~5분** |
-| 10–13 | ② pgAdmin | http://localhost:5050 접속, 쿼리 도구 열기 | – |
-| 13–16 | ③ 데이터 적재 | `docker compose run --rm loader` → **"텍스트 적재 완료"** 가 뜨면 바로 ④로 | 로더 빌드+텍스트 **약 1~2분**, 임베딩은 뒤에서 계속(**3~8분**) |
+| 00–10 | ① 환경 기동 | `docker compose up -d --build` → 빌드 동안 Dockerfile·compose 설명 | 빌드 **2~8분** |
+| 10–13 | ② 화면 열기 | Jupyter http://localhost:8888 · (보조) pgAdmin http://localhost:5050 | – |
+| 13–16 | ③ 데이터 적재 | Jupyter → `4-1/notebooks/01_데이터적재_임베딩.ipynb` → Run → Run All Cells → **"텍스트 적재 완료"** 가 뜨면 ④로 | 텍스트 **약 10초**, 임베딩은 그 노트북에서 뒤로 계속 |
 | 16–33 | ④ ts_rank | `10` → `14` | 14번 평가 **약 2분** |
 | 33–52 | ⑤ BM25 구현 | `20` → `24` | 21번 구축 **약 30초** |
 | 52–60 | ⑥ 종합 비교 | `25` | **약 30초** |
 
-> 실측(캐시 전혀 없는 최초 실행, 12코어 · Docker 메모리 8GB · 약 17MB/s 회선)
-> `compose up` 1분 31초 → 로더 이미지 빌드 41초 → 텍스트 적재 완료 **2분 33초** → 임베딩 완료 5분 23초.
-> 받는 용량은 약 0.8GB(이미지·파이썬 패키지·데이터셋 15MB·임베딩 모델 220MB).
-> 4코어 노트북이나 느린 회선이면 2~3배 걸려도 임베딩은 ④⑤ 를 하는 동안 끝나므로 60분 안에 들어옵니다.
+> 실측(2026-09-27, Windows · Docker 29.7.2, 캐시 없는 최초 빌드) `compose up --build` 7분 34초 → 텍스트 적재 9.9초.
+> 임베딩(Qwen3-Embedding-8B Q4_K_M, LM Studio, 배치 16): 지문 약 0.6건/s(5,309개 약 2시간 30분) · 질문 약 4.9건/s(약 20분).
+> 임베딩 속도는 LM Studio 를 돌리는 PC 성능에 따라 크게 달라진다. 수업 시간 안에 끝나지 않으면 `MAX_EMBED` 로 나눠 채운다.
 
 ## ① 환경 기동
 
@@ -56,7 +58,7 @@ docker compose up -d --build
 ```
 
 - 첫 실행은 이미지를 받고 mecab-ko 를 소스에서 컴파일합니다(12코어 1분 30초, 4코어 약 5분). 두 번째부터는 몇 초.
-- 4-2 실습용 Jupyter 이미지도 함께 빌드됩니다(캐시 없이 약 1분 30초). 4-1 만 할 때는 `docker compose up -d --build db pgadmin` 으로 건너뛸 수 있습니다.
+- Jupyter 이미지도 함께 빌드됩니다(캐시 없이 약 1분 30초). 4-1 · 4-2 모두 Jupyter 에서 실습합니다.
 - Intel/AMD, Apple Silicon, Windows ARM 모두 동작합니다(`db/Dockerfile` 주석 참고).
 - 포트(5432 · 5050 · 8888)는 **내 PC(127.0.0.1)에서만** 열립니다. pgAdmin·Jupyter 는 로그인이 없으므로 같은 Wi-Fi 의 다른 기기가 접속하지 못하게 막아 둔 것입니다.
 - 확인:
@@ -84,7 +86,7 @@ LMSTUDIO_URL=http://host.docker.internal:12345/v1 docker compose up -d      # �
 $env:LMSTUDIO_URL="http://host.docker.internal:12345/v1"; docker compose up -d   # PowerShell
 ```
 
-http://localhost:8888 → `4-1/notebooks/01_데이터적재_임베딩.ipynb` → **Run All**
+http://localhost:8888 → `4-1/notebooks/01_데이터적재_임베딩.ipynb` → **Run → Run All Cells**
 
 | 단계 | 하는 일 |
 |---|---|
@@ -100,9 +102,8 @@ http://localhost:8888 → `4-1/notebooks/01_데이터적재_임베딩.ipynb` →
   - 질문마다 정답 지문이 있어서 "검색이 정답을 상위 10위 안에 찾았나"로 품질을 잴 수 있다
 - 3단계 출력 `✔ 텍스트 적재 완료` 가 뜨면 키워드 검색 실습(④⑤)을 시작해도 된다. 임베딩은 뒤에서 계속 돈다
 - 부하 조절: 첫 셀의 `BATCH_SIZE`(한 요청의 문장 수) · `PAUSE_SEC`(배치 사이 쉬는 시간) · `MAX_EMBED`(이번 실행의 최대 건수)
-- 중간에 멈춰도 배치마다 커밋되어 있으므로 **4번 셀부터 다시 실행**하면 남은 행부터 이어서 채운다 (Run All 은 3번에서 테이블을 비운다)
+- 중간에 멈춰도 배치마다 커밋되어 있으므로 「4. 임베딩 서버 확인」 제목 셀을 클릭하고 **Run → Run Selected Cell and All Below** 하면 남은 행부터 이어서 채운다 (Run All Cells 는 3번에서 테이블을 다시 비운다)
 - 실측(Qwen3-Embedding-8B Q4_K_M, LM Studio 원격 기기, 배치 16): 지문 약 0.6건/s(전체 약 2시간 30분), 질문 약 4.9건/s(약 20분)
-- 텍스트만 넣을 때는 기존 로더도 쓸 수 있다: `docker compose run --rm loader --no-embed`
 
 ## ④ ts_rank 실습 — `sql/10` ~ `sql/14`
 
@@ -148,9 +149,9 @@ IDF(t)    = ln(1 + (N − df + 0.5)/(df + 0.5))
 | `port is already allocated` (5432/5050/8888) | macOS/Linux: `DB_PORT=15432 PGADMIN_PORT=15050 JUPYTER_PORT=18888 docker compose up -d`<br>PowerShell: `$env:DB_PORT=15432; $env:PGADMIN_PORT=15050; $env:JUPYTER_PORT=18888; docker compose up -d` |
 | pgAdmin 이 안 열림 | 첫 기동은 20~30초 걸린다(첫 요청도 몇 초). `docker compose logs pgadmin` 에 `Listening at` 이 보이면 새로고침 |
 | `error while creating mount source path … mkdir /run/desktop/mnt/host/<드라이브>: file exists` | 외장 드라이브 등 해당 드라이브를 Docker Desktop 이 못 읽는 상태. Docker Desktop 을 재시작하거나, 저장소를 C: 드라이브로 옮겨 실행 |
-| loader 가 `Connection refused` | `docker compose ps` 로 db 가 healthy 인지 확인 |
-| 25번에서 벡터 결과가 0 | 임베딩이 아직 진행 중. loader 창의 `완료` 확인 또는 `--embed-only` 재실행 |
+| 노트북에서 DB `Connection refused` | `docker compose ps` 로 db 가 healthy 인지 확인 |
+| 「4. 임베딩 서버 확인」 셀에서 LM Studio 연결 실패 | LM Studio 서버가 켜졌는지, 포트가 1234 가 아니면 `LMSTUDIO_URL` 을 넘겨 다시 `docker compose up -d` |
+| 25번에서 벡터 결과가 0 | 임베딩이 아직 진행 중. 적재 노트북의 진행 출력 확인, 멈췄다면 「4. 임베딩 서버 확인」 셀에서 Run Selected Cell and All Below |
 | 전부 처음부터 | `docker compose down -v` 후 ①부터 |
 
-> 주의: 실습 도중 `docker compose run --build ...` 처럼 `--build` 를 붙이면 db 컨테이너가 재생성되어
-> 실행 중인 쿼리가 끊긴다. 로더는 `docker compose run --rm loader` 로만 실행한다.
+> 주의: 실습 도중 `docker compose up -d --build` 를 다시 하면 컨테이너가 재생성되어 실행 중인 노트북·쿼리가 끊긴다.
