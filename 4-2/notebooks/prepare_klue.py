@@ -3,9 +3,9 @@
   python prepare_klue.py            # 이미 끝난 단계는 건너뛴다 (4-1 을 마쳤다면 4번만 한다)
   python prepare_klue.py --force    # 처음부터 다시
 
-4강실습(4-1)의 코드를 그대로 재사용한다.
-  1) 텍스트 적재      4강실습/loader/load.py     (docs 5,309 · questions 5,841)
-  2) BM25 역색인     4강실습/sql/20~22 *.sql   (bm25_search 함수까지)
+4-1 의 코드를 그대로 재사용한다.
+  1) 텍스트 적재      4-1/loader/load.py     (docs 5,309 · questions 5,841)
+  2) BM25 역색인     4-1/sql/20~22 *.sql   (bm25_search 함수까지)
   3) 문서 임베딩      지문 통째 1개 벡터         ← 4-1 과 같은 방식 (앞 128토큰만 담긴다)
   4) 청크 임베딩      문장 경계로 250자 청크     ← 4-2 에서 추가. "제목 + 청크"를 임베딩
 """
@@ -16,10 +16,10 @@ import time
 
 import psycopg
 
-import load  # 4강실습/loader/load.py (jupyter 이미지의 PYTHONPATH)
+import load  # 4-1/loader/load.py (jupyter 이미지의 PYTHONPATH)
 
 DSN = os.environ["DATABASE_URL"]
-SQL41 = "/work/4강실습/sql"
+SQL41 = "/work/4-1/sql"
 SENT = re.compile(r"(?<=[.!?])\s+")
 
 
@@ -69,7 +69,7 @@ def step_bm25(conn, force):
     if done and not force:
         log("2) BM25: 이미 구축됨 → 건너뜀")
         return
-    log("2) BM25 역색인 구축 (4강실습/sql 20·21·22)")
+    log("2) BM25 역색인 구축 (4-1/sql 20·21·22)")
     for f in ("20_bm25_tables.sql", "21_bm25_build.sql", "22_bm25_search.sql"):
         with open(f"{SQL41}/{f}", encoding="utf-8") as fp:
             conn.execute(fp.read())

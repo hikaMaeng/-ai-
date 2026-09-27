@@ -5,9 +5,19 @@
 #   docker compose down -v              # 전부 삭제(데이터 포함)하고 처음부터 다시
 #
 #   4-1 실습: pgAdmin  http://localhost:5050  → sql/ 의 SQL 파일
-#   4-2 실습: Jupyter  http://localhost:8888  → 4-2강실습/notebooks/ 의 노트북
+#   4-2 실습: Jupyter  http://localhost:8888  → 4-2/notebooks/ 의 노트북
+#
+# 포트는 전부 127.0.0.1 에만 연다. 로그인 없는 pgAdmin·Jupyter 를 같은 Wi-Fi 의 다른 기기가 열지 못하게.
+#
+# 임베딩은 호스트(내 PC)에서 도는 LM Studio 서버가 계산한다.
+#   컨테이너 안의 localhost 는 컨테이너 자신이므로 host.docker.internal 로 호스트에 닿는다.
+#   LM Studio 포트가 1234 가 아니면: LMSTUDIO_URL=http://host.docker.internal:<포트>/v1
 #
 name: ai4-lab
+
+# 임베딩 서버(LM Studio) 접속 설정. jupyter · loader 가 함께 쓴다
+x-lmstudio: &lmstudio
+  LMSTUDIO_URL: ${LMSTUDIO_URL:-http://host.docker.internal:1234/v1}
 
 services:
   db:
@@ -30,7 +40,7 @@ services:
       -c jit=off
     shm_size: 1g            # 병렬 빌드는 /dev/shm 을 쓴다. 도커 기본값 64MB 로는 실패한다
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro   # 최초 1회: 익스텐션·스키마 생성
@@ -57,7 +67,7 @@ services:
       && chmod 600 /var/lib/pgadmin/pgpass
       && exec /entrypoint.sh"
     ports:
-      - "${PGADMIN_PORT:-5050}:80"
+      - "127.0.0.1:${PGADMIN_PORT:-5050}:80"
     volumes:
       - pgadmin:/var/lib/pgadmin
       - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
@@ -73,10 +83,13 @@ services:
     image: ai4-lab/jupyter
     container_name: ai4-jupyter
     environment:
+      <<: *lmstudio
       DATABASE_URL: postgresql://lab:lab@db:5432/lab
       HF_HOME: /cache/hf
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux 용. Docker Desktop(Windows·macOS)은 없어도 된다
     ports:
-      - "${JUPYTER_PORT:-8888}:8888"
+      - "127.0.0.1:${JUPYTER_PORT:-8888}:8888"
     volumes:
       - ..:/work            # 저장소 루트 (노트북에서 고친 내용이 호스트에 그대로 남는다)
       - hfcache:/cache      # loader 와 같은 캐시: 데이터셋·임베딩 모델을 다시 받지 않는다
@@ -90,8 +103,11 @@ services:
     image: ai4-lab/loader
     profiles: ["tools"]
     environment:
+      <<: *lmstudio
       DATABASE_URL: postgresql://lab:lab@db:5432/lab
       HF_HOME: /cache/hf
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - hfcache:/cache   # 데이터셋·임베딩 모델 캐시 (재실행 시 다시 받지 않음)
     depends_on:

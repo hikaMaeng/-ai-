@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # /work = 저장소 루트 (compose 에서 마운트). 4-1 의 load.py 를 노트북에서 import 할 수 있게 한다
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/work/4강실습/loader \
+    PYTHONPATH=/work/4-1/loader \
     HF_HUB_DISABLE_PROGRESS_BARS=1
 WORKDIR /work
 
@@ -17,4 +17,4 @@ WORKDIR /work
 CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", \
      "--IdentityProvider.token=", "--ServerApp.password=", \
      "--ServerApp.root_dir=/work", \
-     "--LabApp.default_url=/lab/tree/4-2강실습/notebooks"]
+     "--LabApp.default_url=/lab/tree/4-2/notebooks"]

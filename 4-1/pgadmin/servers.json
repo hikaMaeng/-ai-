@@ -2,7 +2,7 @@
   "Servers": {
     "1": {
       "Name": "lab (pgvector-ko)",
-      "Group": "4강실습",
+      "Group": "4-1",
       "Host": "db",
       "Port": 5432,
       "MaintenanceDB": "lab",

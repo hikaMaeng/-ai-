@@ -2,14 +2,14 @@
 
 > 현대 AI의 원리와 구조 #4-2 벡터디비 실습 · 뉴런데브클래스
 > 준비물: **Docker Desktop**(실행 중) 하나. 실습은 전부 **Jupyter 노트북**이고, 실행하면 그래프가 그려진다.
-> 환경은 4-1 과 같은 **`4강실습/docker-compose.yml` 하나**다 (db · pgAdmin · **Jupyter**).
+> 환경은 4-1 과 같은 **`4-1/docker-compose.yml` 하나**다 (db · pgAdmin · **Jupyter**).
 > 소요 시간: **약 90분**
 
 ```
-4-2강실습/
+4-2/
 ├─ notebooks/
 │  ├─ labutil.py                   공용 도구 (DB 연결 · recall 측정 · 그래프 한글 설정)
-│  ├─ prepare_klue.py              3부 데이터 준비 (4강실습의 load.py · sql/20~22 재사용 + 청크 임베딩)
+│  ├─ prepare_klue.py              3부 데이터 준비 (4-1의 load.py · sql/20~22 재사용 + 청크 임베딩)
 │  ├─ 00_환경점검.ipynb             버전 확인 · KLUE 준비를 백그라운드로 시작
 │  ├─ 10_NSW_그리디탐색.ipynb       ┐
 │  ├─ 11_HNSW_계층.ipynb            │ 1부 원리: numpy 로 직접 구현 (DB 안 씀)
@@ -25,7 +25,7 @@
 ├─ slides/                          실습 장표 (pptx · pdf)
 └─ 강의슬라이드_수정사항.md           원본 강의 장표의 수정할 문장 (슬라이드 번호별, 실측 근거)
 
-4강실습/
+4-1/
 ├─ docker-compose.yml               db · pgadmin · jupyter · loader
 └─ jupyter/                         JupyterLab 이미지 (numpy · matplotlib · psycopg · fastembed · 나눔 글꼴)
 ```
@@ -45,13 +45,13 @@
 ## ① 환경
 
 ```bash
-cd -ai-/4강실습
+cd ./-ai-/4-1
 docker compose up -d --build
 ```
 
 - 4-1 을 이미 했다면 Jupyter 이미지만 새로 빌드되고, db 는 설정(인덱스 빌드용 메모리)이 바뀌어 **재생성되지만 데이터는 그대로**다
-- 처음이라면 db 이미지(mecab-ko 컴파일)까지 빌드한다 → 4강실습 README ① 참고
-- 브라우저로 **http://localhost:8888** → `4-2강실습/notebooks` 가 바로 열린다 (로그인 없음)
+- 처음이라면 db 이미지(mecab-ko 컴파일)까지 빌드한다 → 4-1 README ① 참고
+- 브라우저로 **http://localhost:8888** → `4-2/notebooks` 가 바로 열린다 (로그인 없음)
 - 셀 실행: `Shift + Enter`. 노트북 전체 실행: 메뉴 **Run → Run All Cells**
 
 ## ② 1부 — 인덱스 원리를 numpy 로 (10 ~ 13)
@@ -117,4 +117,4 @@ docker compose up -d --build
 | 30번에서 `KLUE 준비가 끝나야 한다` | 00번의 진행 확인 셀을 다시 실행. 멈췄다면 `!python prepare_klue.py > prepare.log 2>&1` |
 | 21·22번 recall 이 이상하다(모든 설정에서 같음) | 다른 노트북이 남긴 벡터 인덱스를 플래너가 쓰는 경우. 노트북 첫 셀이 정리하므로 첫 셀부터 다시 실행 |
 | 인덱스 빌드가 매우 느리다 | `docker compose up -d --build` 로 db 설정(maintenance_work_mem 1GB)이 반영됐는지 00번 표로 확인 |
-| 처음부터 | 20번(합성 데이터)은 다시 실행하면 초기화된다. 전부 지우려면 4강실습에서 `docker compose down -v` |
+| 처음부터 | 20번(합성 데이터)은 다시 실행하면 초기화된다. 전부 지우려면 4-1에서 `docker compose down -v` |

@@ -4,10 +4,10 @@
 > 준비물: **Docker Desktop**(실행 중) 하나. Python·PostgreSQL 설치는 필요 없습니다.
 > 소요 시간: **약 50분** (최초 이미지 빌드·데이터셋 다운로드 포함)
 
-> 4-2 실습(Jupyter 노트북)도 이 폴더의 docker-compose 로 함께 뜬다 → [4-2강실습](../4-2강실습/)
+> 4-2 실습(Jupyter 노트북)도 이 폴더의 docker-compose 로 함께 뜬다 → [4-2](../4-2/)
 
 ```
-4강실습/
+4-1/
 ├─ docker-compose.yml        db · pgadmin · jupyter · loader 4개 서비스
 ├─ jupyter/                  4-2 실습용 JupyterLab 이미지 (http://localhost:8888)
 ├─ db/
@@ -51,13 +51,14 @@
 
 ```bash
 git clone https://github.com/hikaMaeng/-ai-.git
-cd -ai-/4강실습
+cd ./-ai-/4-1
 docker compose up -d --build
 ```
 
 - 첫 실행은 이미지를 받고 mecab-ko 를 소스에서 컴파일합니다(12코어 1분 30초, 4코어 약 5분). 두 번째부터는 몇 초.
 - 4-2 실습용 Jupyter 이미지도 함께 빌드됩니다(캐시 없이 약 1분 30초). 4-1 만 할 때는 `docker compose up -d --build db pgadmin` 으로 건너뛸 수 있습니다.
 - Intel/AMD, Apple Silicon, Windows ARM 모두 동작합니다(`db/Dockerfile` 주석 참고).
+- 포트(5432 · 5050 · 8888)는 **내 PC(127.0.0.1)에서만** 열립니다. pgAdmin·Jupyter 는 로그인이 없으므로 같은 Wi-Fi 의 다른 기기가 접속하지 못하게 막아 둔 것입니다.
 - 확인:
   ```bash
   docker compose exec db psql -U lab -d lab -c "SELECT to_tsvector('korean', '무궁화꽃이 피었습니다')"
@@ -67,7 +68,7 @@ docker compose up -d --build
 ## ② pgAdmin
 
 1. 브라우저로 **http://localhost:5050** (로그인 없음)
-2. 왼쪽 트리 **4강실습 → lab (pgvector-ko)** 클릭 (비밀번호 자동)
+2. 왼쪽 트리 **4-1 → lab (pgvector-ko)** 클릭 (비밀번호 자동)
 3. `lab` DB 선택 → 상단 **Query Tool**
 4. 실습 SQL 열기: Query Tool 의 **폴더 아이콘(Open File)** → `sql` 폴더 → 파일 선택
 5. 블록을 드래그해서 **F5**(선택 영역 실행). 주석의 `관찰:` 과 결과를 비교하며 진행
@@ -128,7 +129,8 @@ IDF(t)    = ln(1 + (N − df + 0.5)/(df + 0.5))
 | 증상 | 해결 |
 |---|---|
 | `port is already allocated` (5432/5050/8888) | macOS/Linux: `DB_PORT=15432 PGADMIN_PORT=15050 JUPYTER_PORT=18888 docker compose up -d`<br>PowerShell: `$env:DB_PORT=15432; $env:PGADMIN_PORT=15050; $env:JUPYTER_PORT=18888; docker compose up -d` |
-| pgAdmin 이 안 열림 | 첫 기동은 20~30초 걸린다. `docker compose logs pgadmin` |
+| pgAdmin 이 안 열림 | 첫 기동은 20~30초 걸린다(첫 요청도 몇 초). `docker compose logs pgadmin` 에 `Listening at` 이 보이면 새로고침 |
+| `error while creating mount source path … mkdir /run/desktop/mnt/host/<드라이브>: file exists` | 외장 드라이브 등 해당 드라이브를 Docker Desktop 이 못 읽는 상태. Docker Desktop 을 재시작하거나, 저장소를 C: 드라이브로 옮겨 실행 |
 | loader 가 `Connection refused` | `docker compose ps` 로 db 가 healthy 인지 확인 |
 | 25번에서 벡터 결과가 0 | 임베딩이 아직 진행 중. loader 창의 `완료` 확인 또는 `--embed-only` 재실행 |
 | 전부 처음부터 | `docker compose down -v` 후 ①부터 |
