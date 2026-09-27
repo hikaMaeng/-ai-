@@ -82,6 +82,8 @@ psql 을 선호하면: `docker compose exec db psql -U lab -d lab -f /sql/11_ts_
 
 준비: LM Studio 에서 **Qwen3-Embedding-8B** 를 로드하고 서버를 켠다.
 
+테이블(docs · questions)은 DB 최초 기동 때 `db/init` 이 만들어 둔다. 노트북은 비우고 채우기만 한다.
+
 http://localhost:8888 → `4-1` → `notebooks` → `01_데이터적재_임베딩.ipynb`
 
 | 셀 | 하는 일 |
@@ -90,18 +92,17 @@ http://localhost:8888 → `4-1` → `notebooks` → `01_데이터적재_임베�
 | 2 | 라이브러리와 DB 연결 |
 | 3 | 데이터셋 parquet 가 볼륨(`/cache/hf/parquet`)에 없을 때만 허깅페이스에서 받는다 |
 | 4 | 지문 내용의 md5 로 중복을 지워 지문 5,309 · 질문 5,841 표로 정리 |
-| 5 | 스키마가 `embedding vector(4096)` + `emb128 vector(128)` 인지 확인, 예전 볼륨이면 바꾼다 |
-| 6 | `TRUNCATE … RESTART IDENTITY CASCADE` 후 텍스트 COPY. BM25 역색인이 있으면 `bm25_rebuild()` |
-| 7 | LM Studio 모델 목록 출력, `EMBED_MODEL` 로 시험 임베딩(4096차원 확인) |
-| 8 | 배치 임베딩 함수: 빈 행 `BATCH_SIZE` 개 → 임베딩 → UPDATE → COMMIT 반복 |
-| 9 · 10 | 지문 임베딩(지시문 없음) · 질문 임베딩(`Instruct: … Query:` 지시문) |
-| 11 · 12 | `emb128` HNSW 인덱스와 확인 표 · 맛보기 검색(원본 4096 vs emb128) |
+| 5 | `TRUNCATE … RESTART IDENTITY CASCADE` 후 `INSERT … SELECT FROM unnest(열별 배열)` 두 문장으로 지문·질문 적재. 질문의 정답 지문은 `doc_key` 조인으로 |
+| 6 | LM Studio 모델 목록 출력, `EMBED_MODEL` 로 시험 임베딩(4096차원 확인) |
+| 7 | 배치 임베딩 함수: 빈 행 `BATCH_SIZE` 개 → 임베딩 → UPDATE → COMMIT 반복 |
+| 8 · 9 | 지문 임베딩(지시문 없음) · 질문 임베딩(`Instruct: … Query:` 지시문) |
+| 10 · 11 | `emb128` HNSW 인덱스와 확인 표 · 맛보기 검색(원본 4096 vs emb128) |
 
 - 셀 1 의 `LMSTUDIO_URL` : 컨테이너 안의 localhost 는 컨테이너 자신이므로 `host.docker.internal`. LM Studio 포트가 1234 가 아니면 여기서 바꾼다
-- 셀 1 의 `EMBED_MODEL` : LM Studio 설치마다 이름이 다를 수 있다. 셀 7 이 로드된 모델 목록을 보여 주고, 없는 이름이면 멈춘다
-- 실행 : 메뉴 **Run → Run All Cells**. 셀 6 의 `✔ 텍스트 적재 완료` 가 뜨면 키워드 검색 실습(④⑤)을 시작해도 된다
+- 셀 1 의 `EMBED_MODEL` : LM Studio 설치마다 이름이 다를 수 있다. 셀 6 이 로드된 모델 목록을 보여 주고, 없는 이름이면 멈춘다
+- 실행 : 메뉴 **Run → Run All Cells**. 셀 5 의 `✔ 텍스트 적재 완료` 가 뜨면 키워드 검색 실습(④⑤)을 시작해도 된다
 - 멈춤 : **Kernel → Interrupt Kernel**. 배치마다 커밋하므로 채운 행은 남는다
-- 이어서 : **셀 7** 클릭 → **Run → Run Selected Cell and All Below** (Run All Cells 는 셀 6 에서 테이블을 다시 비운다)
+- 이어서 : **셀 6** 클릭 → **Run → Run Selected Cell and All Below** (Run All Cells 는 셀 5 에서 테이블을 다시 비운다)
 - 진행 확인 : `01b_진행확인.ipynb` (커널이 따로라 임베딩 중에도 실행된다). 탭을 새로 고치면 적재 노트북의 진행 출력은 멈춘 것처럼 보여도 계산은 계속된다
 - 허깅페이스 [klue/klue](https://huggingface.co/datasets/klue/klue) 의 `mrc` validation (CC BY-SA 4.0). 뉴스(한국경제·아크로팬)와 위키백과 지문 **5,309개**, 질문·정답 **5,841개**
 - 실측(Qwen3-Embedding-8B Q4_K_M, LM Studio, 배치 16): 텍스트 적재 약 10~15초, 지문 약 0.5~0.6건/s(전체 약 2시간 30분~3시간), 질문 약 5건/s(약 20분)
@@ -151,8 +152,8 @@ IDF(t)    = ln(1 + (N − df + 0.5)/(df + 0.5))
 | pgAdmin 이 안 열림 | 첫 기동은 20~30초 걸린다(첫 요청도 몇 초). `docker compose logs pgadmin` 에 `Listening at` 이 보이면 새로고침 |
 | `error while creating mount source path … mkdir /run/desktop/mnt/host/<드라이브>: file exists` | 외장 드라이브 등 해당 드라이브를 Docker Desktop 이 못 읽는 상태. Docker Desktop 을 재시작하거나, 저장소를 C: 드라이브로 옮겨 실행 |
 | 노트북에서 DB `Connection refused` | `docker compose ps` 로 db 가 healthy 인지 확인 |
-| 셀 7 에서 LM Studio 연결 실패 | LM Studio 서버가 켜졌는지 확인. 포트가 1234 가 아니면 셀 1 의 `LMSTUDIO_URL` 을 고친다 |
-| 25번에서 벡터 결과가 0 | 임베딩이 아직 진행 중. 적재 노트북의 진행 출력 확인, 멈췄다면 셀 7 에서 Run Selected Cell and All Below |
+| 셀 6 에서 LM Studio 연결 실패 | LM Studio 서버가 켜졌는지 확인. 포트가 1234 가 아니면 셀 1 의 `LMSTUDIO_URL` 을 고친다 |
+| 25번에서 벡터 결과가 0 | 임베딩이 아직 진행 중. 적재 노트북의 진행 출력 확인, 멈췄다면 셀 6 에서 Run Selected Cell and All Below |
 | 전부 처음부터 | `docker compose down -v` 후 ①부터 |
 
 > 주의: 실습 도중 `docker compose up -d --build` 를 다시 하면 컨테이너가 재생성되어 실행 중인 노트북·쿼리가 끊긴다.
