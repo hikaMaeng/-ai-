@@ -92,7 +92,7 @@ http://localhost:8888 → `4-1` → `notebooks` → `01_데이터적재_임베�
 | 2 | 라이브러리와 DB 연결 |
 | 3 | 데이터셋 parquet 가 볼륨(`/cache/hf/parquet`)에 없을 때만 허깅페이스에서 받는다 |
 | 4 | 지문 내용의 md5 로 중복을 지워 지문 5,309 · 질문 5,841 표로 정리 |
-| 5 | `TRUNCATE … RESTART IDENTITY CASCADE` 후 `INSERT … SELECT FROM unnest(열별 배열)` 두 문장으로 지문·질문 적재. 질문의 정답 지문은 `doc_key` 조인으로 |
+| 5 | `TRUNCATE … RESTART IDENTITY CASCADE` 후 `INSERT … SELECT FROM unnest(열별 배열)` 두 문장으로 지문·질문 적재. 지문은 CTE 에서 `doc_tsv()` 한 번으로 `tsv`·`doclen` 을 채우고, 질문의 정답 지문은 `doc_key` 조인으로 |
 | 6 | LM Studio 모델 목록 출력, `EMBED_MODEL` 로 시험 임베딩(4096차원 확인) |
 | 7 | 배치 임베딩 함수: 빈 행 `BATCH_SIZE` 개 → 임베딩 → UPDATE → COMMIT 반복 |
 | 8 · 9 | 지문 임베딩(지시문 없음) · 질문 임베딩(`Instruct: … Query:` 지시문) |
@@ -105,7 +105,7 @@ http://localhost:8888 → `4-1` → `notebooks` → `01_데이터적재_임베�
 - 이어서 : **셀 6** 클릭 → **Run → Run Selected Cell and All Below** (Run All Cells 는 셀 5 에서 테이블을 다시 비운다)
 - 진행 확인 : `01b_진행확인.ipynb` (커널이 따로라 임베딩 중에도 실행된다). 탭을 새로 고치면 적재 노트북의 진행 출력은 멈춘 것처럼 보여도 계산은 계속된다
 - 허깅페이스 [klue/klue](https://huggingface.co/datasets/klue/klue) 의 `mrc` validation (CC BY-SA 4.0). 뉴스(한국경제·아크로팬)와 위키백과 지문 **5,309개**, 질문·정답 **5,841개**
-- 실측(Qwen3-Embedding-8B Q4_K_M, LM Studio, 배치 16): 텍스트 적재 약 50초(BM25 트리거가 역색인까지 채움), 지문 약 0.5~0.6건/s(전체 약 2시간 30분~3시간), 질문 약 5건/s(약 20분)
+- 실측(Qwen3-Embedding-8B Q4_K_M, LM Studio, 배치 16): 텍스트 적재 약 40초(형태소 분석은 CTE 에서 한 번, BM25 트리거가 역색인까지 채움), 지문 약 0.5~0.6건/s(전체 약 2시간 30분~3시간), 질문 약 5건/s(약 20분)
 
 ## ④ ts_rank 실습 — `sql/10` ~ `sql/14`
 

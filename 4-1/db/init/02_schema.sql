@@ -3,8 +3,7 @@
 --   questions : 지문에 딸린 질문과 정답. "이 질문의 정답 지문이 상위 k 안에 오는가"로 검색 품질을 잰다
 
 -- 지문의 형태소 분석 결과. 강의의 setweight 예제 그대로: 제목은 A, 본문은 D
---   생성 컬럼 tsv 와 doclen 이 같은 식을 쓰도록 함수 하나로 둔다
---   (생성 컬럼은 다른 생성 컬럼을 참조할 수 없어 doclen 이 tsv 를 직접 읽지 못한다)
+--   적재할 때 CTE 에서 이 함수를 한 번 부르고, 그 결과로 tsv 와 doclen 을 함께 채운다
 CREATE FUNCTION doc_tsv(title text, content text) RETURNS tsvector
 LANGUAGE sql IMMUTABLE PARALLEL SAFE
 RETURN setweight(to_tsvector('korean', coalesce(title, '')), 'A') ||
@@ -22,9 +21,11 @@ CREATE TABLE docs (
     content   text NOT NULL,
     category  text,                             -- 뉴스 분야 (위키 지문은 NULL)
     source    text,                             -- wikipedia / acrofan / hankyung ...
-    -- 생성 컬럼 : INSERT/UPDATE 때 DB 가 자동 계산한다
-    tsv       tsvector GENERATED ALWAYS AS (doc_tsv(title, content)) STORED,
-    doclen    int      GENERATED ALWAYS AS (tsv_len(doc_tsv(title, content))) STORED,   -- BM25 의 |D|
+    -- 형태소 분석 결과와 문서 길이 : 넣는 쪽이 doc_tsv() 를 한 번 계산해 둘 다 채운다
+    --   (생성 컬럼으로 두면 doclen 이 tsv 를 참조할 수 없어 형태소 분석이 두 번 돈다)
+    --   제목·본문을 고칠 때도 tsv · doclen 을 같이 다시 넣어야 BM25 트리거가 역색인을 고친다
+    tsv       tsvector NOT NULL,
+    doclen    int      NOT NULL,                -- BM25 의 |D| = tsv_len(tsv)
     -- 임베딩 : Qwen3-Embedding-8B (LM Studio) 원본 4096차원. 재정렬·차원 비교용이라 인덱스 없음
     --   pgvector 의 HNSW·IVFFlat 인덱스는 vector 2,000차원까지라 4096 에는 만들 수 없다
     embedding vector(4096),
