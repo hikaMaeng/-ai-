@@ -6,7 +6,7 @@
 --   공식에 필요한 값                      어디서
 --   f(t,D)  문서별 단어 빈도(tf)         bm25_tf (term, doc_id, tf)   ← 역색인. 트리거가 관리
 --   df(t)   단어가 나온 문서 수          bm25_df (term, df)           ← 트리거가 관리
---   |D|     문서 길이                    docs.doclen                  ← 생성 컬럼 (02_schema.sql)
+--   |D|     문서 길이                    docs.doclen                  ← 적재할 때 tsv_len(tsv) (02_schema.sql)
 --   N, avgdl                            검색할 때 docs 에서 count(*), avg(doclen)
 --   IDF(t)                              검색할 때 df 와 N 으로 계산
 --
