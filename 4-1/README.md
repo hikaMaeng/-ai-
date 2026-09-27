@@ -75,17 +75,34 @@ docker compose up -d --build
 
 psql 을 선호하면: `docker compose exec db psql -U lab -d lab -f /sql/11_ts_rank.sql`
 
-## ③ 데이터 적재 — KLUE-MRC
+## ③ 데이터 적재 — KLUE-MRC (Jupyter 노트북)
+
+준비: LM Studio 에서 **Qwen3-Embedding-8B** 를 로드하고 서버를 켠다. 포트가 1234 가 아니면 compose 기동 때 넘긴다.
 
 ```bash
-docker compose run --rm loader
+LMSTUDIO_URL=http://host.docker.internal:12345/v1 docker compose up -d      # 포트가 12345 인 예 (macOS/Linux)
+$env:LMSTUDIO_URL="http://host.docker.internal:12345/v1"; docker compose up -d   # PowerShell
 ```
+
+http://localhost:8888 → `4-1/notebooks/01_데이터적재_임베딩.ipynb` → **Run All**
+
+| 단계 | 하는 일 |
+|---|---|
+| 1 | 데이터셋 parquet 가 볼륨(`/cache/hf`)에 없을 때만 허깅페이스에서 받는다 |
+| 2 | 스키마가 `embedding vector(4096)` + `emb128 vector(128)` 인지 확인, 예전 볼륨이면 바꾼다 |
+| 3 | `TRUNCATE … RESTART IDENTITY CASCADE` 후 지문·질문 텍스트를 COPY. BM25 역색인이 있으면 `bm25_rebuild()` |
+| 4 | LM Studio 에서 Qwen3 임베딩 모델을 찾아 4096차원인지 확인 |
+| 5 | `embedding IS NULL` 인 행만 `BATCH_SIZE` 개씩 임베딩 → UPDATE → COMMIT. 질문에는 instruction 을 붙인다 |
+| 6 | 임베딩이 다 차면 `emb128` 에 HNSW(코사인) 인덱스 |
 
 - 허깅페이스 [klue/klue](https://huggingface.co/datasets/klue/klue) 의 `mrc` validation (CC BY-SA 4.0)
   - 뉴스(한국경제·아크로팬)와 위키백과 지문 **5,309개**, 질문·정답 **5,841개**
   - 질문마다 정답 지문이 있어서 "검색이 정답을 상위 10위 안에 찾았나"로 품질을 잴 수 있다
-- 출력 `✔ 텍스트 적재 완료` 가 뜨면 **이 창은 그대로 두고** ④로 넘어간다. 임베딩은 25번에서만 쓴다.
-- 옵션: `--no-embed`(텍스트만) · `--embed-only`(임베딩만) · `--splits train validation`(전체)
+- 3단계 출력 `✔ 텍스트 적재 완료` 가 뜨면 키워드 검색 실습(④⑤)을 시작해도 된다. 임베딩은 뒤에서 계속 돈다
+- 부하 조절: 첫 셀의 `BATCH_SIZE`(한 요청의 문장 수) · `PAUSE_SEC`(배치 사이 쉬는 시간) · `MAX_EMBED`(이번 실행의 최대 건수)
+- 중간에 멈춰도 배치마다 커밋되어 있으므로 **4번 셀부터 다시 실행**하면 남은 행부터 이어서 채운다 (Run All 은 3번에서 테이블을 비운다)
+- 실측(Qwen3-Embedding-8B Q4_K_M, LM Studio 원격 기기, 배치 16): 지문 약 0.6건/s(전체 약 2시간 30분), 질문 약 4.9건/s(약 20분)
+- 텍스트만 넣을 때는 기존 로더도 쓸 수 있다: `docker compose run --rm loader --no-embed`
 
 ## ④ ts_rank 실습 — `sql/10` ~ `sql/14`
 
