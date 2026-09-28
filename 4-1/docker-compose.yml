@@ -34,7 +34,9 @@ services:
       -c maintenance_work_mem=1GB
       -c max_parallel_maintenance_workers=4
       -c jit=off
-    shm_size: 1g            # 병렬 빌드는 /dev/shm 을 쓴다. 도커 기본값 64MB 로는 실패한다
+    # 병렬 인덱스 빌드는 maintenance_work_mem(1GB) 크기의 공유 메모리를 /dev/shm 에 잡는다
+    #   1g 로 두면 오버헤드만큼 모자라 "could not resize shared memory segment" 로 실패할 수 있다 → 여유를 둔 2g
+    shm_size: 2g
     ports:
       - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
