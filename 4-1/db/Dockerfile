@@ -54,3 +54,7 @@ COPY --from=builder /usr/share/postgresql/${PG_MAJOR}/extension/textsearch_ko* /
 
 RUN ldconfig \
  && echo '형태소 분석기 동작 확인' | mecab | head -3
+
+# 실습7 동의어·불용어 사전 파일 (tsearch_data 는 root 소유라 DB 안에서는 못 쓴다 → 이미지에 넣는다)
+#   korean_lab.syn : 동의어(synonym) · korean_lab.stop : 불용어(simple) · korean_lab.rules : 동의어 펼치기(dict_xsyn)
+COPY tsearch/korean_lab.syn tsearch/korean_lab.stop tsearch/korean_lab.rules /usr/share/postgresql/${PG_MAJOR}/tsearch_data/

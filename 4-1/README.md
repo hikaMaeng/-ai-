@@ -16,9 +16,11 @@
 │  ├─ 03_ts_rank.ipynb       실습3 ts_rank · ts_rank_cd · 길이 정규화 · 평가
 │  ├─ 04_BM25.ipynb          실습4 BM25 항 분해 · k1 · b · 트리거 · 토큰 수와 IDF
 │  ├─ 05_벡터검색.ipynb        실습5 연산자 · HNSW · MRL 차원 · 후보 재정렬 · 종합 평가
-│  └─ 06_필터.ipynb          실습6 PostFilter · PreFilter · iterative scan · 부분 인덱스
+│  ├─ 06_필터.ipynb          실습6 PostFilter · PreFilter · iterative scan · 부분 인덱스
+│  └─ 07_동의어_불용어.ipynb   실습7 파서의 품사 필터 · 불용어 · 동의어(ts_rewrite · 사전 체인 · dict_xsyn)
 ├─ db/
 │  ├─ Dockerfile             pgvector(pg17) + mecab-ko + mecab-ko-dic + textsearch_ko
+│  ├─ tsearch/               실습7 사전 파일(korean_lab.syn · .stop · .rules) → 이미지의 tsearch_data 로 복사
 │  └─ init/                  최초 기동 시 1회: 01 익스텐션 · 02 스키마(docs, questions) · 03 BM25 역색인(bm25_tf · bm25_df 테이블 2 · 트리거 4)
 ├─ pgadmin/                  서버 자동 등록(servers.json) · 비밀번호 파일(pgpass)
 └─ 강의슬라이드_수정사항.md    강의 장표(원본은 Google Slides)의 수정할 문장 (슬라이드 번호별)
@@ -36,6 +38,7 @@
 | ⑥ 실습4 | 04 | BM25 | 약 1분 |
 | ⑦ 실습5 | 05 | 벡터 검색 (임베딩 완료 후) | 약 1분 30초 |
 | ⑧ 실습6 | 06 | 필터 (임베딩 완료 후) | 약 30초 |
+| ⑨ 실습7 | 07 | 동의어 · 불용어 | 약 2분 30초 |
 
 > 실측(2026-09-27, Windows · Docker 29.7.2, 캐시 없는 최초 빌드) `compose up --build` 7분 34초.
 > 임베딩(Qwen3-Embedding-8B Q4_K_M, LM Studio, 배치 16): 지문 약 0.5~0.6건/s(5,309개 약 2시간 30분~3시간) · 질문 약 5건/s(약 20분).
@@ -172,6 +175,23 @@ IDF(t)    = ln(1 + (N − df + 0.5)/(df + 0.5))
 | 8 | 부분 인덱스(`… WHERE category = '자동차'`) : 조건별 그래프, 10행 · 정확도 1.0 |
 | 9 | 세 방식의 행 수 · 정확도 · 질의당 ms (지문 5,309개라 시간 차이는 작다) |
 
+## ⑨ 실습7 · 동의어와 불용어 — `07_동의어_불용어.ipynb`
+
+형태소 분석 · 동의어 · 불용어는 pgvector 가 아니라 PostgreSQL 전문검색(tsearch)의 사전 체인이 한다. 한국어 형태소 분석은 textsearch_ko(mecab).
+
+| 셀 | 핵심 관찰 |
+|---|---|
+| 3 | 파서가 조사 · 어미 · 접속부사(그리고)를 품사로 `blank` 처리 → 한국어 불용어는 이미 품사로 걸러진다 |
+| 4 | `ts_stat` 문서 빈도 상위 : 것 79.0% · 들 78.0% · 있 77.1% · 등 74.4% … (BM25 IDF 0.236~) |
+| 5 | 질의에서 상위 N 개 빼기 : ts_rank(OR) Hit@10 0.484 → 0.540 · MRR 0.354 → 0.406 (N=100). BM25 는 0.938 → 0.930 로 변화 없음(IDF 가 이미 누름) |
+| 6 | `ts_rewrite` 규칙 표 : "스마트폰 판매" 69 → 86건. 규칙이 없는 표현("휴대폰 요금")은 그대로 · 양방향 규칙은 `인공지능 \| 인공지능 \| ai` 처럼 겹침 |
+| 7 | `korean_lab` = 불용어(simple) → 동의어(synonym) → mecab. `전기자동차 → 전기차` 규칙은 mecab 이 먼저 전기 + 자동차로 잘라 안 먹는다 |
+| 8 | `dict_xsyn` 을 질의 쪽에 쓰면 `스마트폰 & 휴대폰 & 핸드폰`(AND) → 0건. 문서 쪽에 쓰면 "스마트폰" 214 → 270건 |
+| 9 | 한 트랜잭션에서 지문 전체를 `korean_lab` 으로 재분석(BM25 트리거 포함 약 46초) → 평가 → ROLLBACK. ts_rank 0.484 → 0.510 · BM25 0.938 → 0.938(MRR 0.837 → 0.835) |
+
+- 사전 파일은 DB 서버의 `tsearch_data` 폴더(root 소유)에 있어야 해서 `db/tsearch/` 를 DB 이미지에 넣었다. 파일을 고치면 `docker compose up -d --build db`
+- 셀 7 · 8 이 만드는 `korean_lab` · `korean_xsyn` 설정과 `dict_xsyn` 익스텐션은 DB 에 남는다(다시 실행하면 지우고 새로 만든다). 저장된 `docs.tsv` 와 역색인은 셀 9 가 되돌린다
+
 ## 문제 해결
 
 | 증상 | 해결 |
@@ -182,6 +202,7 @@ IDF(t)    = ln(1 + (N − df + 0.5)/(df + 0.5))
 | 노트북에서 DB `Connection refused` | `docker compose ps` 로 db 가 healthy 인지 확인 |
 | 실습1 셀 6 · 실습5 셀 9 에서 LM Studio 연결 실패 | LM Studio 서버가 켜졌는지 확인. 포트가 1234 가 아니면 셀 1 의 `LMSTUDIO_URL` 을 고친다 |
 | 실습5 · 6 셀 2 에서 `실습1 의 지문 임베딩이 다 차야 한다` | 임베딩이 아직 진행 중. `01b_진행확인.ipynb` 로 확인, 멈췄다면 실습1 셀 6 에서 Run Selected Cell and All Below |
+| 실습7 셀 2 에서 `사전 파일이 DB 이미지에 없다` | DB 이미지가 사전 파일을 넣기 전 것. `docker compose up -d --build db` 후 셀 1 부터 |
 | 전부 처음부터 | `docker compose down -v` 후 ①부터 |
 
 > 주의: 실습 도중 `docker compose up -d --build` 를 다시 하면 컨테이너가 재생성되어 실행 중인 노트북이 끊긴다.
