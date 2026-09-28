@@ -5,7 +5,7 @@ __pycache__/
 Thumbs.db
 ~$*.pptx
 .ipynb_checkpoints/
-# 4-2 노트북 실행 산출물
+# 노트북 실행 산출물
+4-1/notebooks/results/
 4-2/notebooks/results/
 4-2/notebooks/_out/
-4-2/notebooks/prepare.log

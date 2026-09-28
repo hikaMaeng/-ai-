@@ -40,7 +40,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro   # 최초 1회: 익스텐션·스키마 생성
-      - ./sql:/sql:ro                              # 실습 SQL (psql -f /sql/... 로 실행)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lab -d lab"]
       interval: 3s
@@ -68,7 +67,6 @@ services:
       - pgadmin:/var/lib/pgadmin
       - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
       - ./pgadmin/pgpass:/pgadmin4/pgpass.src:ro
-      - ./sql:/var/lib/pgadmin/storage/pgadmin4_pgadmin.org/sql:ro   # 쿼리 도구에서 파일 열기
     depends_on:
       db:
         condition: service_healthy
@@ -78,9 +76,6 @@ services:
     build: ./jupyter
     image: ai4-lab/jupyter
     container_name: ai4-jupyter
-    environment:
-      DATABASE_URL: postgresql://lab:lab@db:5432/lab
-      HF_HOME: /cache/hf
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Linux 용. Docker Desktop(Windows·macOS)은 없어도 된다
     ports:

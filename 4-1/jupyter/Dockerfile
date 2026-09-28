@@ -13,9 +13,8 @@ RUN mkdir -p /usr/local/share/jupyter/lab/settings \
  && printf '{"@jupyterlab/notebook-extension:tracker": {"windowingMode": "none"}}\n' \
       > /usr/local/share/jupyter/lab/settings/overrides.json
 
-# /work = 저장소 루트 (compose 에서 마운트). 4-1 의 load.py 를 노트북에서 import 할 수 있게 한다
+# /work = 저장소 루트 (compose 에서 마운트)
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/work/4-1/loader \
     HF_HUB_DISABLE_PROGRESS_BARS=1
 WORKDIR /work
 

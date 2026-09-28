@@ -10,8 +10,6 @@ import pandas as pd
 import psycopg
 from pgvector.psycopg import register_vector
 
-DSN = os.environ.get("DATABASE_URL", "postgresql://lab:lab@db:5432/lab")
-
 # ── 그래프 ────────────────────────────────────────────────────────────
 plt.rcParams.update({
     "font.family": "NanumGothic",       # 한글 글꼴 (jupyter 이미지에 설치됨)
@@ -24,9 +22,9 @@ pd.set_option("display.max_colwidth", 80)
 
 
 # ── DB ──────────────────────────────────────────────────────────────
-def connect():
-    """autocommit 연결. numpy 배열을 vector 타입으로 바로 주고받을 수 있게 등록한다."""
-    conn = psycopg.connect(DSN, autocommit=True)
+def connect(db_url):
+    """autocommit 연결. db_url 은 노트북 셀 1 의 DB_URL. numpy 배열을 vector 타입으로 바로 주고받을 수 있게 등록한다."""
+    conn = psycopg.connect(db_url, autocommit=True)
     # psycopg 는 같은 SQL 을 5번 넘게 실행하면 서버에 prepare 해 두고 실행 계획을 재사용한다.
     # 그러면 SET hnsw.ef_search / enable_indexscan 을 바꿔도 옛 계획이 쓰이므로 끈다.
     conn.prepare_threshold = None
