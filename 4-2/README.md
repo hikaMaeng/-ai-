@@ -20,8 +20,8 @@
 │  ├─ 23_pgvector_양자화.ipynb        ┘
 │  ├─ 30_퓨전_RRF_MinMax.ipynb        ┐ 3부 품질: KLUE-MRC · Qwen3 임베딩 (4-1 과 같은 데이터·질문)
 │  └─ 31_분포진단.ipynb              ┘
-├─ slides/                          예전 실습 장표 (pptx · pdf)
-└─ 강의슬라이드_수정사항.md           원본 강의 장표의 수정할 문장 (슬라이드 번호별, 실측 근거)
+├─ 분석/                            노트북 결과를 더 파고든 스크립트 (퓨전 검증 · 구간별 비교 · 벡터 약점)
+└─ 강의슬라이드_수정사항.md           강의 장표(원본은 Google Slides)의 수정할 문장 (슬라이드 번호별, 실측 근거)
 ```
 
 > 필터(PreFilter · PostFilter · iterative scan · 부분 인덱스)는 4-1 강의 범위라 4-1 실습6(`4-1/notebooks/06_필터.ipynb`)에서 실제 데이터로 한다.

@@ -21,8 +21,7 @@
 │  ├─ Dockerfile             pgvector(pg17) + mecab-ko + mecab-ko-dic + textsearch_ko
 │  └─ init/                  최초 기동 시 1회: 01 익스텐션 · 02 스키마(docs, questions) · 03 BM25 역색인(bm25_tf · bm25_df 테이블 2 · 트리거 4)
 ├─ pgadmin/                  서버 자동 등록(servers.json) · 비밀번호 파일(pgpass)
-├─ slides/                   예전 실습 장표(pptx · pdf)
-└─ 강의슬라이드_수정사항.md    원본 강의 장표의 수정할 문장 (슬라이드 번호별)
+└─ 강의슬라이드_수정사항.md    강의 장표(원본은 Google Slides)의 수정할 문장 (슬라이드 번호별)
 ```
 
 ## 타임테이블

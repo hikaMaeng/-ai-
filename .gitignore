@@ -1,11 +1,47 @@
+# 저장소에는 손으로 쓴 원본만 둔다. 다운로드·실행 결과·편집기 부산물은 올리지 않는다.
+#   강의 장표 원본은 Google Slides (저장소에 pptx · pdf 를 두지 않는다)
+
+# ── 실행 결과 ────────────────────────────────────────────────────────
+# 노트북이 쓰는 평가 결과(검색평가.csv · klue_runs.pkl · hnsw_curve.csv …)
+**/notebooks/results/
+# nbconvert 로 실행한 사본 · 시험용 사본
+**/notebooks/_out/
+_out_*.ipynb
+_t*.ipynb
+# 분석 스크립트의 실행 출력 (결과 요약은 README 에 적는다)
+*.out.txt
+# 임시 실험 스크립트
+scratch/
+
+# ── 다운로드 · 데이터 · 모델 ─────────────────────────────────────────
+# 데이터셋은 도커 볼륨(hfcache → /cache)에 받는다. 컨테이너 밖에서 돌렸을 때를 대비한 안전망
+*.parquet
+*.arrow
+*.pkl
+*.npy
+*.npz
+*.gguf
+*.safetensors
+hf_cache/
+.cache/
+data/
+
+# ── Jupyter · Python 부산물 ─────────────────────────────────────────
+.ipynb_checkpoints/
+.virtual_documents/
 __pycache__/
 *.pyc
+.venv/
+
+# ── 장표 파일 (원본은 Google Slides) ─────────────────────────────────
+*.pptx
+*.ppt
+*.key
+~$*.pptx
+**/slides/
+
+# ── 기타 ─────────────────────────────────────────────────────────────
 .env
+*.log
 .DS_Store
 Thumbs.db
-~$*.pptx
-.ipynb_checkpoints/
-# 노트북 실행 산출물
-4-1/notebooks/results/
-4-2/notebooks/results/
-4-2/notebooks/_out/
