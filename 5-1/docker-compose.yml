@@ -1,0 +1,25 @@
+# 5-1 실습 환경: 4-1 스택(db · jupyter · pgadmin)은 그대로 두고, CLIP 을 돌릴 Jupyter 하나를 더 띄운다
+#
+#   전제 : 4-1 에서 docker compose up -d --build 를 이미 한 번 했다 (ai4-lab/jupyter 이미지 · hfcache 볼륨)
+#
+#   cd ./-ai-/5-1
+#   docker compose up -d --build          # 첫 빌드 약 2~4분 (CPU PyTorch 내려받기)
+#
+#   실습 화면 : http://localhost:8889  → 5-1/notebooks
+#     4-1 의 Jupyter(8888)와 같은 저장소 · 같은 데이터 볼륨을 본다. 포트만 다르다
+#
+name: ai4-lab
+
+services:
+  clip:
+    build: ./clip
+    image: ai4-lab/jupyter-clip
+    container_name: ai4-clip
+    ports:
+      - "127.0.0.1:${CLIP_PORT:-8889}:8888"
+    volumes:
+      - ..:/work            # 저장소 루트
+      - hfcache:/cache      # 4-1 과 같은 볼륨 : CLIP 모델(약 600MB)도 여기에 받아 둔다
+
+volumes:
+  hfcache:

@@ -1,0 +1,151 @@
+file,group,label,detail,source,source_id,license
+pet_shiba_inu_1.jpg,pet,shiba_inu,dog,timm/oxford-iiit-pet test,shiba_inu_8,CC BY-SA 4.0
+pet_shiba_inu_2.jpg,pet,shiba_inu,dog,timm/oxford-iiit-pet test,shiba_inu_56,CC BY-SA 4.0
+pet_shiba_inu_3.jpg,pet,shiba_inu,dog,timm/oxford-iiit-pet test,shiba_inu_42,CC BY-SA 4.0
+pet_shiba_inu_4.jpg,pet,shiba_inu,dog,timm/oxford-iiit-pet test,shiba_inu_31,CC BY-SA 4.0
+pet_shiba_inu_5.jpg,pet,shiba_inu,dog,timm/oxford-iiit-pet test,shiba_inu_82,CC BY-SA 4.0
+pet_samoyed_1.jpg,pet,samoyed,dog,timm/oxford-iiit-pet test,samoyed_80,CC BY-SA 4.0
+pet_samoyed_2.jpg,pet,samoyed,dog,timm/oxford-iiit-pet test,samoyed_86,CC BY-SA 4.0
+pet_samoyed_3.jpg,pet,samoyed,dog,timm/oxford-iiit-pet test,samoyed_196,CC BY-SA 4.0
+pet_samoyed_4.jpg,pet,samoyed,dog,timm/oxford-iiit-pet test,samoyed_67,CC BY-SA 4.0
+pet_samoyed_5.jpg,pet,samoyed,dog,timm/oxford-iiit-pet test,samoyed_4,CC BY-SA 4.0
+pet_pug_1.jpg,pet,pug,dog,timm/oxford-iiit-pet test,pug_57,CC BY-SA 4.0
+pet_pug_2.jpg,pet,pug,dog,timm/oxford-iiit-pet test,pug_62,CC BY-SA 4.0
+pet_pug_3.jpg,pet,pug,dog,timm/oxford-iiit-pet test,pug_55,CC BY-SA 4.0
+pet_pug_4.jpg,pet,pug,dog,timm/oxford-iiit-pet test,pug_40,CC BY-SA 4.0
+pet_pug_5.jpg,pet,pug,dog,timm/oxford-iiit-pet test,pug_71,CC BY-SA 4.0
+pet_beagle_1.jpg,pet,beagle,dog,timm/oxford-iiit-pet test,beagle_44,CC BY-SA 4.0
+pet_beagle_2.jpg,pet,beagle,dog,timm/oxford-iiit-pet test,beagle_30,CC BY-SA 4.0
+pet_beagle_3.jpg,pet,beagle,dog,timm/oxford-iiit-pet test,beagle_6,CC BY-SA 4.0
+pet_beagle_4.jpg,pet,beagle,dog,timm/oxford-iiit-pet test,beagle_72,CC BY-SA 4.0
+pet_beagle_5.jpg,pet,beagle,dog,timm/oxford-iiit-pet test,beagle_35,CC BY-SA 4.0
+pet_chihuahua_1.jpg,pet,chihuahua,dog,timm/oxford-iiit-pet test,chihuahua_44,CC BY-SA 4.0
+pet_chihuahua_2.jpg,pet,chihuahua,dog,timm/oxford-iiit-pet test,chihuahua_191,CC BY-SA 4.0
+pet_chihuahua_3.jpg,pet,chihuahua,dog,timm/oxford-iiit-pet test,chihuahua_86,CC BY-SA 4.0
+pet_chihuahua_4.jpg,pet,chihuahua,dog,timm/oxford-iiit-pet test,chihuahua_28,CC BY-SA 4.0
+pet_chihuahua_5.jpg,pet,chihuahua,dog,timm/oxford-iiit-pet test,chihuahua_37,CC BY-SA 4.0
+pet_siamese_1.jpg,pet,siamese,cat,timm/oxford-iiit-pet test,Siamese_240,CC BY-SA 4.0
+pet_siamese_2.jpg,pet,siamese,cat,timm/oxford-iiit-pet test,Siamese_73,CC BY-SA 4.0
+pet_siamese_3.jpg,pet,siamese,cat,timm/oxford-iiit-pet test,Siamese_84,CC BY-SA 4.0
+pet_siamese_4.jpg,pet,siamese,cat,timm/oxford-iiit-pet test,Siamese_20,CC BY-SA 4.0
+pet_siamese_5.jpg,pet,siamese,cat,timm/oxford-iiit-pet test,Siamese_91,CC BY-SA 4.0
+pet_persian_1.jpg,pet,persian,cat,timm/oxford-iiit-pet test,Persian_98,CC BY-SA 4.0
+pet_persian_2.jpg,pet,persian,cat,timm/oxford-iiit-pet test,Persian_265,CC BY-SA 4.0
+pet_persian_3.jpg,pet,persian,cat,timm/oxford-iiit-pet test,Persian_84,CC BY-SA 4.0
+pet_persian_4.jpg,pet,persian,cat,timm/oxford-iiit-pet test,Persian_39,CC BY-SA 4.0
+pet_persian_5.jpg,pet,persian,cat,timm/oxford-iiit-pet test,Persian_26,CC BY-SA 4.0
+pet_bengal_1.jpg,pet,bengal,cat,timm/oxford-iiit-pet test,Bengal_22,CC BY-SA 4.0
+pet_bengal_2.jpg,pet,bengal,cat,timm/oxford-iiit-pet test,Bengal_79,CC BY-SA 4.0
+pet_bengal_3.jpg,pet,bengal,cat,timm/oxford-iiit-pet test,Bengal_31,CC BY-SA 4.0
+pet_bengal_4.jpg,pet,bengal,cat,timm/oxford-iiit-pet test,Bengal_71,CC BY-SA 4.0
+pet_bengal_5.jpg,pet,bengal,cat,timm/oxford-iiit-pet test,Bengal_86,CC BY-SA 4.0
+hh_off_01.jpg,hardhat,no-hardhat,미착용 4 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),006890_jpg.rf.46ffb9ed55bf1bcd88a0b93bfda03ead.jpg,CC BY 4.0
+hh_off_02.jpg,hardhat,no-hardhat,미착용 5 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),000957_jpg.rf.9f7c3464b4ad3eaedc692dec9accff78.jpg,CC BY 4.0
+hh_off_03.jpg,hardhat,no-hardhat,미착용 4 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),004297_jpg.rf.10c9efeac2e4a3fa4b2a07489e754306.jpg,CC BY 4.0
+hh_off_04.jpg,hardhat,no-hardhat,미착용 2 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),005367_jpg.rf.5baf6f11429d818d7f4ce2ca7cc9dbee.jpg,CC BY 4.0
+hh_off_05.jpg,hardhat,no-hardhat,미착용 5 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),003990_jpg.rf.80a627251842d781a46fd246550dff16.jpg,CC BY 4.0
+hh_off_06.jpg,hardhat,no-hardhat,미착용 5 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),005634_jpg.rf.bbcf33c3532e7a213702fdcdb56cb257.jpg,CC BY 4.0
+hh_off_07.jpg,hardhat,no-hardhat,미착용 2 · 착용 0,keremberke/hard-hat-detection hh_test (Roboflow Hard Hats),003845_jpg.rf.98332787cf4e2dd45ea3142f90f62504.jpg,CC BY 4.0
+hh_off_08.jpg,hardhat,no-hardhat,미착용 4 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),003833_jpg.rf.652b35cfb8dfd4aae1dcc40acd3875f5.jpg,CC BY 4.0
+hh_off_09.jpg,hardhat,no-hardhat,미착용 4 · 착용 0,keremberke/hard-hat-detection hh_test (Roboflow Hard Hats),004861_jpg.rf.626ed49aa54e43a8ec39d9cf476f2d6b.jpg,CC BY 4.0
+hh_off_10.jpg,hardhat,no-hardhat,미착용 5 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),005245_jpg.rf.e01bc7d4efc41770ef04a69dff5f5b88.jpg,CC BY 4.0
+hh_off_11.jpg,hardhat,no-hardhat,미착용 3 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),006783_jpg.rf.642457a714bdcc9f7f86f103d51fceac.jpg,CC BY 4.0
+hh_off_12.jpg,hardhat,no-hardhat,미착용 5 · 착용 0,keremberke/hard-hat-detection hh_test (Roboflow Hard Hats),000392_jpg.rf.30abf4caf83b8941c1bf9e0ef9b88d6c.jpg,CC BY 4.0
+hh_off_13.jpg,hardhat,no-hardhat,미착용 3 · 착용 0,keremberke/hard-hat-detection hh_test (Roboflow Hard Hats),005710_jpg.rf.5fc2442fbdf6aff0faef1e6b428013de.jpg,CC BY 4.0
+hh_off_14.jpg,hardhat,no-hardhat,미착용 5 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),002404_jpg.rf.031143a4c78b6c7b67cf07613a370bd2.jpg,CC BY 4.0
+hh_off_15.jpg,hardhat,no-hardhat,미착용 5 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),002477_jpg.rf.810009afb8e877dbc93cecac5d13dfde.jpg,CC BY 4.0
+hh_off_16.jpg,hardhat,no-hardhat,미착용 3 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),003350_jpg.rf.780696d44933b11ced751a8055b12bf9.jpg,CC BY 4.0
+hh_off_17.jpg,hardhat,no-hardhat,미착용 2 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),001998_jpg.rf.bf3d28fd99ff080f36e0e2d66864ec84.jpg,CC BY 4.0
+hh_off_18.jpg,hardhat,no-hardhat,미착용 4 · 착용 0,keremberke/hard-hat-detection hh_test (Roboflow Hard Hats),002702_jpg.rf.30893c90cf25d1293ee0e781d8f4a635.jpg,CC BY 4.0
+hh_off_19.jpg,hardhat,no-hardhat,미착용 3 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),000700_jpg.rf.fe4e4270f2248e9a12ee73e60c275564.jpg,CC BY 4.0
+hh_off_20.jpg,hardhat,no-hardhat,미착용 5 · 착용 0,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),000006_jpg.rf.9b694475b9367ff9bee12a95eb5d88ff.jpg,CC BY 4.0
+hh_on_01.jpg,hardhat,hardhat,미착용 0 · 착용 1,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),ppe_0385_jpg.rf.1c6495977317398c73b70a6a8d64f285.jpg,CC BY 4.0
+hh_on_02.jpg,hardhat,hardhat,미착용 0 · 착용 1,keremberke/hard-hat-detection hh_test (Roboflow Hard Hats),ppe_0371_jpg.rf.10284f86d50a4a621b8586f94b8299c0.jpg,CC BY 4.0
+hh_on_03.jpg,hardhat,hardhat,미착용 0 · 착용 2,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),004530_jpg.rf.ddea0655fbbfc17cc5251e525167ed21.jpg,CC BY 4.0
+hh_on_04.jpg,hardhat,hardhat,미착용 0 · 착용 2,keremberke/hard-hat-detection hh_test (Roboflow Hard Hats),002562_jpg.rf.f087f9678c154d070a845584f06453dc.jpg,CC BY 4.0
+hh_on_05.jpg,hardhat,hardhat,미착용 0 · 착용 1,keremberke/hard-hat-detection hh_test (Roboflow Hard Hats),000109_jpg.rf.7e245152475024aa1e084d0510fccd3d.jpg,CC BY 4.0
+hh_on_06.jpg,hardhat,hardhat,미착용 0 · 착용 1,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),000042_jpg.rf.0c59580c4a36edf17be2b18118e6cf58.jpg,CC BY 4.0
+hh_on_07.jpg,hardhat,hardhat,미착용 0 · 착용 1,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),000144_jpg.rf.5a15f415ae4c3242228e0ae77ecb6b8b.jpg,CC BY 4.0
+hh_on_08.jpg,hardhat,hardhat,미착용 0 · 착용 1,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),000235_jpg.rf.4822032e20225da6fe6e939c68c6222f.jpg,CC BY 4.0
+hh_on_09.jpg,hardhat,hardhat,미착용 0 · 착용 4,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),006589_jpg.rf.7db177a9f405f9a4ad9d3ced298fb7ee.jpg,CC BY 4.0
+hh_on_10.jpg,hardhat,hardhat,미착용 0 · 착용 2,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),000114_jpg.rf.c5dd7682b021f83417793c242925146e.jpg,CC BY 4.0
+hh_on_11.jpg,hardhat,hardhat,미착용 0 · 착용 2,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),003250_jpg.rf.8f1f4c20c5fa23a0edd78c35f06fa9de.jpg,CC BY 4.0
+hh_on_12.jpg,hardhat,hardhat,미착용 0 · 착용 2,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),003982_jpg.rf.2379b74a6d6b08fc84d0cb02d875320d.jpg,CC BY 4.0
+hh_on_13.jpg,hardhat,hardhat,미착용 0 · 착용 2,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),003314_jpg.rf.6e66c52638a82b195336bc1225fc8fab.jpg,CC BY 4.0
+hh_on_14.jpg,hardhat,hardhat,미착용 0 · 착용 2,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),007057_jpg.rf.8740e824e9964507d946e16df396f612.jpg,CC BY 4.0
+hh_on_15.jpg,hardhat,hardhat,미착용 0 · 착용 5,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),004636_jpg.rf.530a7cf87a3fdd1273b2c4b7890fdd68.jpg,CC BY 4.0
+hh_on_16.jpg,hardhat,hardhat,미착용 0 · 착용 2,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),001262_jpg.rf.4a9ed47f9f097f0ae56f99aa5d92ff11.jpg,CC BY 4.0
+hh_on_17.jpg,hardhat,hardhat,미착용 0 · 착용 2,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),ppe_0774_jpg.rf.558d6b195015e2f27ae7b55b02550aee.jpg,CC BY 4.0
+hh_on_18.jpg,hardhat,hardhat,미착용 0 · 착용 2,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),000083_jpg.rf.1d3a1e2869d18a8de8c9e77de3539bc9.jpg,CC BY 4.0
+hh_on_19.jpg,hardhat,hardhat,미착용 0 · 착용 1,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),003147_jpg.rf.1827065a5e5846caf2f7a34ca01d9637.jpg,CC BY 4.0
+hh_on_20.jpg,hardhat,hardhat,미착용 0 · 착용 2,keremberke/hard-hat-detection hh_valid (Roboflow Hard Hats),003453_jpg.rf.319b35c389c4cae1b5427509427d8d50.jpg,CC BY 4.0
+shape_above_red_01.png,shape_relation,red above blue,,generated,,이 저장소
+shape_above_red_02.png,shape_relation,red above blue,,generated,,이 저장소
+shape_above_red_03.png,shape_relation,red above blue,,generated,,이 저장소
+shape_above_red_04.png,shape_relation,red above blue,,generated,,이 저장소
+shape_above_red_05.png,shape_relation,red above blue,,generated,,이 저장소
+shape_above_red_06.png,shape_relation,red above blue,,generated,,이 저장소
+shape_above_red_07.png,shape_relation,red above blue,,generated,,이 저장소
+shape_above_red_08.png,shape_relation,red above blue,,generated,,이 저장소
+shape_above_red_09.png,shape_relation,red above blue,,generated,,이 저장소
+shape_above_red_10.png,shape_relation,red above blue,,generated,,이 저장소
+shape_above_blue_01.png,shape_relation,blue above red,,generated,,이 저장소
+shape_above_blue_02.png,shape_relation,blue above red,,generated,,이 저장소
+shape_above_blue_03.png,shape_relation,blue above red,,generated,,이 저장소
+shape_above_blue_04.png,shape_relation,blue above red,,generated,,이 저장소
+shape_above_blue_05.png,shape_relation,blue above red,,generated,,이 저장소
+shape_above_blue_06.png,shape_relation,blue above red,,generated,,이 저장소
+shape_above_blue_07.png,shape_relation,blue above red,,generated,,이 저장소
+shape_above_blue_08.png,shape_relation,blue above red,,generated,,이 저장소
+shape_above_blue_09.png,shape_relation,blue above red,,generated,,이 저장소
+shape_above_blue_10.png,shape_relation,blue above red,,generated,,이 저장소
+shape_bind_redcircle_01.png,shape_binding,red circle and blue square,,generated,,이 저장소
+shape_bind_redcircle_02.png,shape_binding,red circle and blue square,,generated,,이 저장소
+shape_bind_redcircle_03.png,shape_binding,red circle and blue square,,generated,,이 저장소
+shape_bind_redcircle_04.png,shape_binding,red circle and blue square,,generated,,이 저장소
+shape_bind_redcircle_05.png,shape_binding,red circle and blue square,,generated,,이 저장소
+shape_bind_redcircle_06.png,shape_binding,red circle and blue square,,generated,,이 저장소
+shape_bind_redcircle_07.png,shape_binding,red circle and blue square,,generated,,이 저장소
+shape_bind_redcircle_08.png,shape_binding,red circle and blue square,,generated,,이 저장소
+shape_bind_redcircle_09.png,shape_binding,red circle and blue square,,generated,,이 저장소
+shape_bind_redcircle_10.png,shape_binding,red circle and blue square,,generated,,이 저장소
+shape_bind_bluecircle_01.png,shape_binding,blue circle and red square,,generated,,이 저장소
+shape_bind_bluecircle_02.png,shape_binding,blue circle and red square,,generated,,이 저장소
+shape_bind_bluecircle_03.png,shape_binding,blue circle and red square,,generated,,이 저장소
+shape_bind_bluecircle_04.png,shape_binding,blue circle and red square,,generated,,이 저장소
+shape_bind_bluecircle_05.png,shape_binding,blue circle and red square,,generated,,이 저장소
+shape_bind_bluecircle_06.png,shape_binding,blue circle and red square,,generated,,이 저장소
+shape_bind_bluecircle_07.png,shape_binding,blue circle and red square,,generated,,이 저장소
+shape_bind_bluecircle_08.png,shape_binding,blue circle and red square,,generated,,이 저장소
+shape_bind_bluecircle_09.png,shape_binding,blue circle and red square,,generated,,이 저장소
+shape_bind_bluecircle_10.png,shape_binding,blue circle and red square,,generated,,이 저장소
+shape_count_2_01.png,shape_count,2,,generated,,이 저장소
+shape_count_2_02.png,shape_count,2,,generated,,이 저장소
+shape_count_2_03.png,shape_count,2,,generated,,이 저장소
+shape_count_2_04.png,shape_count,2,,generated,,이 저장소
+shape_count_2_05.png,shape_count,2,,generated,,이 저장소
+shape_count_2_06.png,shape_count,2,,generated,,이 저장소
+shape_count_3_01.png,shape_count,3,,generated,,이 저장소
+shape_count_3_02.png,shape_count,3,,generated,,이 저장소
+shape_count_3_03.png,shape_count,3,,generated,,이 저장소
+shape_count_3_04.png,shape_count,3,,generated,,이 저장소
+shape_count_3_05.png,shape_count,3,,generated,,이 저장소
+shape_count_3_06.png,shape_count,3,,generated,,이 저장소
+shape_count_4_01.png,shape_count,4,,generated,,이 저장소
+shape_count_4_02.png,shape_count,4,,generated,,이 저장소
+shape_count_4_03.png,shape_count,4,,generated,,이 저장소
+shape_count_4_04.png,shape_count,4,,generated,,이 저장소
+shape_count_4_05.png,shape_count,4,,generated,,이 저장소
+shape_count_4_06.png,shape_count,4,,generated,,이 저장소
+shape_count_5_01.png,shape_count,5,,generated,,이 저장소
+shape_count_5_02.png,shape_count,5,,generated,,이 저장소
+shape_count_5_03.png,shape_count,5,,generated,,이 저장소
+shape_count_5_04.png,shape_count,5,,generated,,이 저장소
+shape_count_5_05.png,shape_count,5,,generated,,이 저장소
+shape_count_5_06.png,shape_count,5,,generated,,이 저장소
+shape_count_6_01.png,shape_count,6,,generated,,이 저장소
+shape_count_6_02.png,shape_count,6,,generated,,이 저장소
+shape_count_6_03.png,shape_count,6,,generated,,이 저장소
+shape_count_6_04.png,shape_count,6,,generated,,이 저장소
+shape_count_6_05.png,shape_count,6,,generated,,이 저장소
+shape_count_6_06.png,shape_count,6,,generated,,이 저장소
