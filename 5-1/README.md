@@ -1,12 +1,17 @@
-# 5강 실습 — CLIP : 사진과 글을 한 공간에서 재기
+# 5강 실습 — CLIP · 멀티모달 임베딩 : 사진과 글을 한 공간에서 재기
 
 > 현대 AI의 원리와 구조 #5-1 이미지 생성 실습 · 뉴런데브클래스
 > 전제 : [4-1](../4-1/) 의 도커 환경을 한 번 띄운 적이 있다(`ai4-lab/jupyter` 이미지 · `hfcache` 볼륨). **LM Studio 는 필요 없다.**
-> 실습 화면 : 4-1 의 Jupyter **http://localhost:8888** 에서 `5-1/notebooks/01_CLIP_실습.ipynb` 를 열면 된다 — 셀 2 가 처음 한 번 PyTorch 를 설치(CPU 판 약 200MB, 1~3분)
+> 실습 화면 : 4-1 의 Jupyter **http://localhost:8888** 에서 `5-1/notebooks/` 의 노트북을 열면 된다 — 셀 2 가 처음 한 번 PyTorch 를 설치(CPU 판 약 200MB, 1~3분)
 > 장치 : 노트북 셀 1 의 `DEVICE` 로 NVIDIA GPU(`cuda`) · 맥 Metal(`mps`) · `cpu` 를 고른다. 기본 `auto`
 
-장표 「CLIP 대조학습」 · 「CLIP의 활용과 한계」 · 「이미지·텍스트 임베딩 파이프라인」(이미지 타워 · 텍스트 타워 · 정렬·손실)을
-CLIP ViT-B/32 로 직접 돌려, 장표의 텐서 모양과 주장(제로샷 분류 · 검색 · 관계/부정/개수의 한계)을 숫자로 확인한다.
+| 노트북 | 모델 | 장표 | 받는 모델 · 메모리 | CPU 전체 |
+|---|---|---|---|---|
+| `01_CLIP_실습.ipynb` | CLIP ViT-B/32 | 「CLIP 대조학습」 · 「CLIP의 활용과 한계」 · 「이미지·텍스트 임베딩 파이프라인」 | 약 600MB | 약 30초 |
+| `02_Qwen3VL_임베딩_실습.ipynb` | Qwen3-VL-Embedding-2B | 「CLIP과 멀티모달 임베딩」 | 약 4GB · float32 약 9GB | 약 5분 (RTX 4080 약 1분) |
+
+- 01 : 장표의 텐서 모양과 주장(제로샷 분류 · 검색 · 관계/부정/개수의 한계)을 숫자로 확인한다
+- 02 : 같은 사진 150장 + 문서 스크린샷 6장으로 멀티모달 LLM 기반 임베딩을 돌려, CLIP 에서 무엇이 달라지고(지시문 · 한국어 · 섞인 입력 · 문서 이미지 · 개수) 무엇이 그대로인지(관계 · 결합 · 부정) 잰다
 
 ```
 5-1/
@@ -14,12 +19,18 @@ CLIP ViT-B/32 로 직접 돌려, 장표의 텐서 모양과 주장(제로샷 분
 ├─ docker-compose.gpu.yml 위 파일에 덧붙이면 같은 컨테이너를 CUDA 판 PyTorch + GPU 로 띄운다
 ├─ clip/Dockerfile        ai4-lab/jupyter + PyTorch(CPU 또는 CUDA) + transformers
 ├─ notebooks/
-│  └─ 01_CLIP_실습.ipynb   셀 13개. 코드 셀 첫 줄 = "# 셀 N · 제목", 설정은 셀 1
+│  ├─ 01_CLIP_실습.ipynb           셀 13개. 코드 셀 첫 줄 = "# 셀 N · 제목", 설정은 셀 1
+│  └─ 02_Qwen3VL_임베딩_실습.ipynb 셀 13개. 같은 규칙
 ├─ images/                실습 사진 150장 + images.csv(파일 · 그룹 · 라벨 · 출처 · 라이선스)
+├─ docs/                  02 용 문서 스크린샷 6장 + docs.csv (가상의 공정 · 안전 서식)
 └─ tools/                 강사용 — 수강생은 실행하지 않는다
-   ├─ prepare_images.py   images/ 를 다시 만드는 스크립트(원본 데이터셋에서 선별)
-   └─ build_notebook.py   노트북 생성기(셀 내용은 여기서 고친다)
+   ├─ prepare_images.py       images/ 를 다시 만드는 스크립트(원본 데이터셋에서 선별)
+   ├─ make_docs.py            docs/ 를 다시 그리는 스크립트(나눔고딕)
+   ├─ build_notebook.py       01 노트북 생성기(셀 내용은 여기서 고친다)
+   └─ build_notebook_qwen.py  02 노트북 생성기
 ```
+
+- 02 는 01 과 같은 컨테이너 · 같은 패키지(`transformers==5.17.*`)에 `torchvision` 하나만 더 쓴다(도커 이미지에 포함, 없는 Jupyter 는 셀 2 가 설치). 공식 예제가 쓰는 `qwen-vl-utils` 없이 같은 계산을 셀 2 에 넣었다
 
 ## 실행 환경 — 다섯 중 하나
 
@@ -32,6 +43,7 @@ CLIP ViT-B/32 로 직접 돌려, 장표의 텐서 모양과 주장(제로샷 분
 | ④ 직접 설치 · 맥 | `mps` | Apple Silicon 맥(Metal) | 아래 '직접 설치' |
 
 - ⓪ : 셀 2 가 `torch` · `transformers` 가 없으면 그 Jupyter 에 설치한다(`pip install`). 4-1 컨테이너에는 GPU 가 연결되어 있지 않으므로 CPU 판
+  - 02 의 셀 2 는 `torchvision` 도 없으면 설치한다(Qwen3-VL 프로세서가 씀). 이미 깔린 torch 와 같은 판(`+cpu` · `+cu130` · 기본)을 고른다
   - 설치는 컨테이너 안에 남는다. `docker compose up -d --build` 등으로 4-1 컨테이너를 다시 만들면 셀 2 가 다시 설치한다
   - 받는 판 : 리눅스 · 윈도에서 NVIDIA GPU(`nvidia-smi`)가 보이면 CUDA 판, 맥은 기본판(Metal), 그 밖은 CPU 판 — ③ · ④ 에서 `pip install` 을 건너뛰어도 셀 2 가 같은 판을 받는다
 - `DEVICE = "auto"` 는 `cuda` → `mps` → `cpu` 순으로 있는 것을 고른다. 셀 2 가 고른 장치 이름을 출력한다
@@ -47,7 +59,7 @@ docker compose up -d --build                                                  # 
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build  # ② GPU
 ```
 
-- 4-1 의 `ai4-lab/jupyter` 이미지 위에 PyTorch(`torch==2.14.*`) · `transformers==5.17.*` 만 더한다. 4-1 · 4-2 이미지는 그대로다
+- 4-1 의 `ai4-lab/jupyter` 이미지 위에 PyTorch(`torch==2.14.*` · `torchvision==0.29.*`) · `transformers==5.17.*` 만 더한다. 4-1 · 4-2 이미지는 그대로다
 - ① 이미지 `ai4-lab/jupyter-clip` 1.74GB(CPU 휠) · ② `ai4-lab/jupyter-clip:gpu` 6.48GB(CUDA 13.0 판). 첫 빌드는 PyTorch 를 받느라 수 분
 - 두 경로 모두 같은 컨테이너 이름 `ai4-clip` · 같은 포트 8889 — 명령을 바꿔 치면 서로 바뀐다
 - ② 전제 : 아래가 GPU 이름을 출력해야 한다. 실패하면 ③ 으로
@@ -65,8 +77,8 @@ Python 3.12 이상. 저장소의 `5-1` 폴더에서 :
 python -m venv .venv
 source .venv/bin/activate            # 윈도 : .venv\Scripts\activate
 # PyTorch — 하나만
-pip install torch==2.14.* --index-url https://download.pytorch.org/whl/cu130   # ③ NVIDIA (윈도 · 리눅스, 드라이버 580 이상)
-pip install torch==2.14.*                                                       # ④ 맥 (Metal 포함)
+pip install torch==2.14.* torchvision==0.29.* --index-url https://download.pytorch.org/whl/cu130   # ③ NVIDIA (윈도 · 리눅스, 드라이버 580 이상)
+pip install torch==2.14.* torchvision==0.29.*                                                       # ④ 맥 (Metal 포함)
 # 나머지
 pip install "transformers==5.17.*" safetensors pillow pandas matplotlib jupyterlab
 jupyter lab notebooks/01_CLIP_실습.ipynb
@@ -121,6 +133,69 @@ jupyter lab notebooks/01_CLIP_실습.ipynb
 | 11 | 상위 10 중 맞는 비율 : "wearing a hard hat" 1.0 · "without a hard hat" 0.0 · "not wearing a hard hat" 0.0 · "with bare heads" 0.3 (무작위 0.5) |
 | 12 | 원 2~6개 개수 0.37 (찍기 0.20). 예측이 3 · 5 로 몰림 |
 
+## 노트북 `02_Qwen3VL_임베딩_실습.ipynb`
+
+모델 `Qwen/Qwen3-VL-Embedding-2B`(Qwen3-VL 위에 대조학습으로 만든 임베딩 모델, 2.13B · 2048차원). 여는 곳 · 장치 선택 · Run All 은 01 과 같다.
+
+- 첫 실행은 모델 약 4GB 를 받는다(도커는 `hfcache` 볼륨, 직접 설치는 `~/.cache/huggingface`)
+- float32 로 메모리 약 9GB. 모자라면 셀 1 `DTYPE = "bfloat16"`(약 4.5GB · 숫자가 조금 달라짐, 미실측)
+- 임베딩 계산은 셀 2 의 `embed()` : [system 지시문][user 사진 · 글][assistant 차례] 대화 → 모델 → 마지막 토큰 벡터 → 길이 1
+  - 공식 구현(QwenLM/Qwen3-VL-Embedding `qwen3_vl_embedding.py`)과 같은 입력 4개(글 2 · 사진 2)의 벡터 최대 차이 **0.0** (강사 PC · 도커 CPU 에서 대조)
+
+| 셀 | 하는 일 | 장표 |
+|---|---|---|
+| 1 | 설정 — 모델 · DTYPE · 지시문 · 내 사진/문장 | – |
+| 2 | 모델 불러오기 · `embed()` | – |
+| 3 | 입력 구조 — 대화 틀 · 이미지 토큰 수 · 마지막 토큰 | CLIP과 멀티모달 임베딩 2번 |
+| 4 | 사진 150장 → `[150 × 2048]` | – |
+| 5 | 01 셀 6 과 같은 사진 3 · 캡션 3 코사인 표 | CLIP 대조학습 3번 |
+| 6 | 37품종 제로샷 — 지시문 기본값 / 분류 지시문 | 달라지는 점 : 지시문 |
+| 7 | 01 셀 9 질의를 한국어로 검색 | 달라지는 점 : 긴 글 · 다국어 |
+| 8 | 01 셀 10~12 한계(관계 · 결합 · 부정 · 개수) 다시 재기 + 부정 우회 | CLIP의 활용과 한계 3번 |
+| 9 | 섞인 입력 — 사진만 / 글만 / 두 벡터 평균 / 한 입력 | 달라지는 점 : 섞인 입력 |
+| 10 | 문서 스크린샷 6장 검색 — 지시문 기본값 / 문서 지시문 | 달라지는 점 : 문서 이미지 |
+| 11 | 차원 자르기(MRL) 2048 → 64 | 3강 MRL |
+| 12 | CLIP 과 크기 · 사진 1장 시간 비교 | 달라지는 점 : 대가 |
+| 13 | 내 사진 · 내 문장 | – |
+
+### 실측 02 (강사 PC)
+
+transformers 5.17.0 · float32. 수치는 실행한 노트북 출력(`notebooks/_out/`, 저장소 밖)에서 옮겼다. 시간은 실행마다 10% 안팎으로 달라진다(같은 ① 의 앞선 실행 : 사진 105.4s · 문서 87s · 전체 5분 34초)
+
+| 경로 | 날짜 | 장치 | 셀 4 사진 150장 | 셀 10 문서 6장 | 전체 |
+|---|---|---|---|---|---|
+| ① 도커 CPU | 2026-09-30 | CPU(스레드 24) · torch 2.14.0+cpu · torchvision 0.29.0+cpu (다시 빌드한 이미지) | 90.9s | 77s | 4분 49초 |
+| ⓪ 4-1 Jupyter 그대로 | 2026-09-30 | CPU · 셀 2 가 torchvision 0.29.0+cpu 를 설치 | 89.3s | 76s | 4분 48초. 셀 2~13 결과 숫자가 ①과 같음(설치 안내 · 시간 줄 제외) |
+| ③ 직접 설치 · NVIDIA | 2026-09-30 | RTX 4080 · torch 2.14.0+cu130 · 셀 2 가 torchvision cu130 판을 설치 | 6.8s | 3s | 2분 36초(모델 받기 · 설치 포함). 결과 숫자가 ①과 같음 · 셀 12 는 CLIP 0.035s · Qwen 0.158s/장 = 4배 |
+| ② 도커 GPU · ④ 맥 | – | – | – | – | **미검증** (01 과 같은 이유) |
+
+| 셀 | 결과 (① 기준) |
+|---|---|
+| 3 | `pet_pug_1.jpg` 320×213 → 320×224 → 16픽셀 패치 14×20 = 280 → 2×2 합치기 → 이미지 토큰 70. 입력열 101토큰 → 출력 `(1, 101, 2048)`. 마지막 토큰 `<\|endoftext\|>` |
+| 4 | `(150, 2048)`. 이미지 토큰 수(15장 표본) 49~100 |
+| 5 | 대각선 0.439~0.538 · 그 밖 0.080~0.265 (CLIP 0.291~0.331 · 0.154~0.209) |
+| 6 | 지시문 기본값 0.825 · "Classify the pet breed in the image." **0.975**(틀림 siamese→birman 1장). CLIP 0.875 · 최고 0.925 |
+| 7 | "하얀 털이 복슬복슬한 개" 상위 5 = 사모예드 4 · 페르시안 1. "주황색 안전 조끼를 입은 작업자" = 안전모 착용 5. "점무늬 털의 고양이" = 벵갈 3 · 페르시안 1 · 샴 1 |
+| 8 | 관계 0.50 · 결합 0.45 (찍기 0.50) · 부정 "without a hard hat" 0.00 · "안전모를 쓰지 않은 작업자" 0.00 · 대조 "안전모를 쓴 작업자" 1.00 · 개수 **0.87** (CLIP 0.37). 우회 : "쓴 작업자" 점수가 가장 낮은 10장 중 미착용 1.00 |
+| 9 | 맞힌 비율(질의 8개) : 사진만 0.50 · 글만 0.25 · 두 벡터 평균 0.75 · 한 입력 0.875. 틀림 : 안전모 사진 + "소개하는 글" → 안전모 수칙 |
+| 10 | 문서 한 장 이미지 토큰 952. 1위가 정답 문서 : 지시문 기본값 0.67 · 문서 지시문 0.83. 둘 다 틀림 "배관 수압 시험 결과" → 펌프 점검표 |
+| 11 | 차원 2048 · 1024 · 512 · 256 · 128 · 64 → 기본 지시문 0.825 · 0.825 · 0.775 · 0.775 · 0.575 · 0.450 / 분류 지시문 0.975 · 0.975 · 1.000 · 0.975 · 1.000 · 0.975 |
+| 12 | CLIP 151M · 0.057s/장 · Qwen3-VL-Embedding-2B 2.13B · 1.241s/장 → 파라미터 14배 · 시간 22배 |
+| 13 | `hh_on_01.jpg` : "안전모를 쓴 건설 작업자" 0.4613 · "회의실에서 정장을 입은 사람들" 0.1126 · "잔디 위의 개" 0.0573 |
+
+## 문서 스크린샷 `docs/` (6장, 약 320KB)
+
+`tools/make_docs.py` 가 나눔고딕(SIL OFL)으로 그린 900×1100 가상 서식. 실제 설비 · 회사 · 인물과 무관하다.
+
+| 파일 | 제목 | 형태 |
+|---|---|---|
+| doc_1_pressure_test.png | 배관 압력 시험 기록표 | 표 |
+| doc_2_hot_work_permit.png | 화기 작업 허가서 | 확인 표 |
+| doc_3_pump_inspection.png | 펌프 월간 점검표 | 표 |
+| doc_4_msds_toluene.png | 물질안전보건자료 요약 — 톨루엔 | 항목 표 |
+| doc_5_training_schedule.png | 10월 안전 교육 일정표 | 표 |
+| doc_6_reactor_log.png | 반응기 R-301 온도 기록 | 꺾은선 그래프 |
+
 ## 사진 `images/` (150장, 1.9MB)
 
 | 그룹 | 수 | 원본 | 라이선스 |
@@ -145,12 +220,17 @@ jupyter lab notebooks/01_CLIP_실습.ipynb
 | 셀 2 에서 모델을 못 받음 | 인터넷 연결 확인. 받은 뒤에는 볼륨에 남아 다시 받지 않는다 |
 | 8889 포트를 이미 쓰는 중 | `CLIP_PORT=8890 docker compose up -d` 후 http://localhost:8890 |
 | 내 사진을 쓰고 싶다 | `5-1/images` 에 넣고 셀 1 의 `MY_IMAGE` 에 파일 이름 |
+| 02 셀 2 에서 커널이 죽음(메모리) | 셀 1 `DTYPE = "bfloat16"`. 도커는 Docker Desktop 의 메모리 한도를 10GB 이상으로 |
+| 02 가 CPU 에서 오래 걸림 | 정상. 사진 150장 약 2분 · 문서 6장 약 1분 반. 셀 10 의 문서는 한 장에 이미지 토큰 약 950개 |
 
 ## 강사용 — 사진 · 노트북 다시 만들기
 
 ```bash
 # 사진 : hard-hat-detection 의 data/test.zip · data/valid.zip 을 받아 둔 뒤
 python tools/prepare_images.py --hardhat-zip <test.zip> --hardhat-zip <valid.zip>
-# 노트북 : 셀 내용을 tools/build_notebook.py 에서 고치고
+# 노트북 : 셀 내용을 tools/build_notebook.py(01) · tools/build_notebook_qwen.py(02) 에서 고치고
 python tools/build_notebook.py
+python tools/build_notebook_qwen.py
+# 문서 스크린샷 : 한글 TTF(기본 나눔고딕)를 찾아 docs/ 를 다시 그림
+python tools/make_docs.py            # 또는 --font <경로>
 ```

@@ -8,7 +8,8 @@
 FROM ai4-lab/jupyter
 
 ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir --index-url ${TORCH_INDEX} torch==2.14.* \
+#   torchvision : 02 노트북(Qwen3-VL 프로세서)이 씀. torch 와 같은 곳에서 짝이 맞는 판(0.29 ↔ 2.14)
+RUN pip install --no-cache-dir --index-url ${TORCH_INDEX} torch==2.14.* torchvision==0.29.* \
  && pip install --no-cache-dir transformers==5.17.* safetensors
 
 # 모델 캐시는 hfcache 볼륨(/cache/hf)에 → 컨테이너를 지워도 다시 받지 않는다
