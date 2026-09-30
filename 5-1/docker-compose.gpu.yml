@@ -1,0 +1,24 @@
+# NVIDIA GPU 용 덧붙임 파일 — 기본 docker-compose.yml 과 함께 쓴다
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+#
+#   · 같은 컨테이너(ai4-clip) · 같은 포트(8889)를 CUDA 판 PyTorch 로 다시 만든다
+#   · 노트북 셀 1 의 DEVICE = "auto" 가 GPU 를 잡는다(셀 2 가 장치 이름을 출력)
+#   · 전제 : NVIDIA 드라이버 + 도커가 GPU 를 컨테이너에 넘길 수 있어야 한다
+#       Windows → Docker Desktop(WSL2) · Linux → NVIDIA Container Toolkit
+#     확인 : docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu24.04 nvidia-smi -L
+#     이 명령이 실패하는 PC 는 도커 GPU 를 못 쓴다 → README 의 '직접 설치' 로 GPU 를 쓴다
+#   · CPU 로 되돌리기 : docker compose up -d --build   (이 파일 없이)
+services:
+  clip:
+    build:
+      args:
+        TORCH_INDEX: https://pypi.org/simple
+    image: ai4-lab/jupyter-clip:gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

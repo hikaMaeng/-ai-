@@ -40,20 +40,27 @@ md('''
 | 12 | 한계 ③ 개수 | 활용과 한계 3번 |
 | 13 | 내 사진 · 내 문장으로 | – |
 
-- 실행 : **Run → Run All Cells** (첫 실행은 모델 약 600MB 를 받는다. 이후 전체 약 1분)
-- GPU 없이 CPU 로 돈다. 사진은 `5-1/images/images.csv` 에 출처 · 라이선스와 함께 적혀 있다
+- 실행 : **Run → Run All Cells** (첫 실행은 모델 약 600MB 를 받는다. 이후 전체 약 30초)
+- 장치 : 셀 1 의 `DEVICE` — `auto`(있으면 NVIDIA GPU → 맥 Metal → CPU 순) · `cuda` · `mps` · `cpu`
+- **PyTorch 가 든 Jupyter 에서 연다** : 5-1 도커(http://localhost:8889) 또는 직접 설치(5-1/README.md). 4-1 의 8888 에는 PyTorch 가 없다
+- 사진은 `5-1/images/images.csv` 에 출처 · 라이선스와 함께 적혀 있다
 ''')
 
 md('''
 ### 셀 1 · 설정
+- `DEVICE` : 계산 장치. `auto` 는 NVIDIA GPU(`cuda`) → 맥 Metal(`mps`) → `cpu` 순으로 있는 것을 고름
+  - 도커 CPU 컨테이너에서는 `cpu` 만, 도커 GPU 컨테이너 · 직접 설치에서는 `cuda` · `mps` 도 된다
+  - 장치를 바꿔도 결과 숫자는 같다(소수 넷째 자리까지). 속도만 다르다
 - `MODEL` : CLIP ViT-B/32 (이미지 224×224, 조각 32×32, 출력 512차원) — 장표와 같은 모델
+- `IMAGE_DIR` : `auto` 는 이 노트북 옆의 `../images`
 - `BREEDS_37` · `TEMPLATES` : 셀 7 · 8 제로샷 후보와 문구
 - `MY_TEXTS` · `MY_IMAGE` : 셀 13 에서 내 문장과 내 사진으로 바꿔 본다
 ''')
 code('''
 # 셀 1 · 설정
+DEVICE     = "auto"      # "auto" · "cuda"(NVIDIA GPU) · "mps"(맥 Metal) · "cpu"
 MODEL      = "openai/clip-vit-base-patch32"
-IMAGE_DIR  = "/work/5-1/images"
+IMAGE_DIR  = "auto"      # auto = 이 노트북 옆의 ../images
 
 # 셀 7 · 8 : 제로샷 분류 후보 = Oxford-IIIT Pet 37품종 전부 (사진은 그중 8품종 × 5장)
 BREEDS_37 = ["abyssinian", "american_bulldog", "american_pit_bull_terrier", "basset_hound", "beagle", "bengal",
@@ -73,27 +80,64 @@ MY_IMAGE = "hh_on_01.jpg"
 
 md('''
 ### 셀 2 · 모델 불러오기 · 사진 목록
+- 셀 1 의 `DEVICE` 대로 장치를 고르고, 모델을 그 장치에 올린다
+- PyTorch 가 없는 Jupyter 에서 열면 여기서 멈추고 어디서 열어야 하는지 알려 준다
 - `CLIPModel` 하나에 이미지 타워 · 텍스트 타워 · 투영 · 온도가 다 들어 있다
 - `images.csv` : 파일 · 그룹 · 라벨 · 출처 · 라이선스
 ''')
 code('''
 # 셀 2 · 모델 불러오기 · 사진 목록
-import math, time, warnings
+import math, os, time, warnings
 from pathlib import Path
-warnings.filterwarnings("ignore", message="IProgress not found")   # 진행 막대 위젯 안내 문구 숨김
+# 모델 내려받기 · 불러오기 때 나오는 안내 문구와 진행 막대를 숨김(도커 이미지는 환경변수로 이미 숨김)
+for k, v in {"HF_HUB_VERBOSITY": "error", "TRANSFORMERS_VERBOSITY": "error",
+             "HF_HUB_DISABLE_PROGRESS_BARS": "1", "HF_HUB_DISABLE_SYMLINKS_WARNING": "1"}.items():
+    os.environ.setdefault(k, v)
+warnings.filterwarnings("ignore", message="IProgress not found")
 
 import numpy as np
 import pandas as pd
-import torch
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 from PIL import Image
-from transformers import CLIPModel, CLIPProcessor
+try:
+    import torch
+    from transformers import CLIPModel, CLIPProcessor
+    from transformers.utils import logging as hf_logging
+    hf_logging.disable_progress_bar()
+except ModuleNotFoundError as e:
+    raise ModuleNotFoundError(
+        f"'{e.name}' 가 없는 Jupyter 다. 이 노트북은 PyTorch 가 든 환경에서 연다\\n"
+        "  · 도커 : 5-1 폴더에서 docker compose up -d --build → http://localhost:8889  (4-1 의 8888 이 아님)\\n"
+        "  · 도커 없이(맥 Metal · NVIDIA GPU) : 5-1/README.md 의 '직접 설치'") from None
 
-plt.rcParams.update({"font.family": "NanumGothic", "axes.unicode_minus": False, "figure.dpi": 110})
+# 한글 글꼴 : 컨테이너 NanumGothic · 맥 AppleGothic · 윈도 Malgun Gothic 중 있는 것
+have = {f.name for f in font_manager.fontManager.ttflist}
+plt.rcParams.update({"font.family": [f for f in ("NanumGothic", "AppleGothic", "Malgun Gothic") if f in have] or ["DejaVu Sans"],
+                     "axes.unicode_minus": False, "figure.dpi": 110})
 torch.set_grad_enabled(False)
 
+# 장치 고르기 — GPU 에서도 CPU 와 같은 숫자가 나오게 TF32(저정밀 곱셈)는 끈다
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
+avail = {"cuda": torch.cuda.is_available(),
+         "mps": getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available(),
+         "cpu": True}
+want = next(d for d in ("cuda", "mps", "cpu") if avail[d]) if DEVICE == "auto" else DEVICE
+if not avail.get(want, False):
+    raise RuntimeError(f"DEVICE = '{DEVICE}' 를 이 환경에서 쓸 수 없다. 쓸 수 있는 장치 : {[d for d, ok in avail.items() if ok]}"
+                       " → 셀 1 을 바꾸거나 5-1/README.md 의 실행 환경 표를 본다")
+DEV = torch.device(want)
+name = torch.cuda.get_device_name(DEV) if DEV.type == "cuda" else ("Apple GPU (Metal)" if DEV.type == "mps" else "CPU")
+print(f"장치 {DEV} · {name} · torch {torch.__version__}")
+
+if IMAGE_DIR == "auto":
+    IMAGE_DIR = next((str(d) for d in (Path.cwd().parent / "images", Path("/work/5-1/images"), Path.cwd() / "5-1" / "images")
+                      if (d / "images.csv").exists()), None)
+    assert IMAGE_DIR, "사진 폴더(5-1/images)를 찾지 못했다 → 셀 1 의 IMAGE_DIR 에 경로를 적는다"
+
 t0 = time.time()
-model = CLIPModel.from_pretrained(MODEL).eval()
+model = CLIPModel.from_pretrained(MODEL).eval().to(DEV)
 proc  = CLIPProcessor.from_pretrained(MODEL)
 print(f"모델 불러오기 {time.time() - t0:.1f}s · 파라미터 {sum(p.numel() for p in model.parameters()) / 1e6:.0f}M")
 
@@ -132,7 +176,7 @@ code('''
 # 셀 3 · 이미지 타워 — 텐서 모양 따라가기
 vm = model.vision_model
 img = load("pet_shiba_inu_4.jpg")
-x = proc(images=img, return_tensors="pt")["pixel_values"]
+x = proc(images=img, return_tensors="pt")["pixel_values"].to(DEV)
 print(f"② 입력                     {tuple(x.shape)}   숫자 {x.numel():,}개")
 
 conv = vm.embeddings.patch_embedding
@@ -181,7 +225,7 @@ ids = tok(ko)["input_ids"]
 print(f"\\n'{ko}' → 토큰 {len(ids)}개 {ids}")
 print(f"  한글 {len(ko.replace(' ', ''))}글자가 [SOS]·[EOS] 빼고 {len(ids) - 2}조각 — 글자를 UTF-8 바이트 조각으로 쪼갬(영어 위주 어휘)")
 
-t = tok(["a red car"], padding="max_length", max_length=77, return_tensors="pt")
+t = tok(["a red car"], padding="max_length", max_length=77, return_tensors="pt").to(DEV)
 print(f"\\n77칸으로 채운 입력 {tuple(t['input_ids'].shape)} · 실제 토큰 {int(t['attention_mask'].sum())}개")
 out = model.text_model(**t)
 print(f"블록 출력 {tuple(out.last_hidden_state.shape)}")
@@ -193,7 +237,7 @@ print(f"투영 W_text {tuple(model.text_projection.weight.shape[::-1])} → [512
 
 md('''
 ### 셀 5 · 사진 150장 임베딩
-- 이미지 타워 한 번에 16장씩 → `[150 × 512]`, 모두 길이 1
+- 이미지 타워 한 번에 16장씩 → `[150 × 512]`, 모두 길이 1. 계산은 `DEV` 에서, 결과는 CPU 로 가져와 이후 셀에서 씀
 - `enc_text(문장들)` : 텍스트 타워 → `[문장 수 × 512]`, 길이 1
 ''')
 code('''
@@ -201,19 +245,19 @@ code('''
 def enc_images(names, bs=16):
     out = []
     for i in range(0, len(names), bs):
-        px = proc(images=[load(n) for n in names[i:i + bs]], return_tensors="pt")["pixel_values"]
-        out.append(feats(model.get_image_features(pixel_values=px)))
+        px = proc(images=[load(n) for n in names[i:i + bs]], return_tensors="pt")["pixel_values"].to(DEV)
+        out.append(feats(model.get_image_features(pixel_values=px)).cpu())
     e = torch.cat(out)
     return e / e.norm(dim=-1, keepdim=True)
 
 def enc_text(texts):
-    t = proc(text=list(texts), return_tensors="pt", padding=True)
-    e = feats(model.get_text_features(**t))
+    t = proc(text=list(texts), return_tensors="pt", padding=True).to(DEV)
+    e = feats(model.get_text_features(**t)).cpu()
     return e / e.norm(dim=-1, keepdim=True)
 
 t0 = time.time()
 IMG = enc_images(meta["file"].tolist())
-print(f"사진 {IMG.shape[0]}장 → {tuple(IMG.shape)} · {time.time() - t0:.1f}s · 길이 {IMG.norm(dim=-1).min():.4f}~{IMG.norm(dim=-1).max():.4f}")
+print(f"사진 {IMG.shape[0]}장 → {tuple(IMG.shape)} · {DEV} {time.time() - t0:.1f}s · 길이 {IMG.norm(dim=-1).min():.4f}~{IMG.norm(dim=-1).max():.4f}")
 emb = dict(zip(meta["file"], IMG))
 ''')
 
@@ -303,7 +347,7 @@ def ensemble(templates):
     W = torch.stack([enc_text([t.format(n) for t in templates]).mean(dim=0) for n in NAMES])
     return W / W.norm(dim=-1, keepdim=True)
 
-scale = model.logit_scale.exp()
+scale = model.logit_scale.exp().item()
 rows = []
 for name, W in [("라벨 단어만", enc_text(NAMES)),
                 ("a photo of a {}.", W1),
@@ -416,7 +460,7 @@ code('''
 # 셀 13 · 내 사진 · 내 문장으로
 v = enc_images([MY_IMAGE])[0]
 s = enc_text(MY_TEXTS) @ v
-p = (s * model.logit_scale.exp()).softmax(dim=0)
+p = (s * model.logit_scale.exp().item()).softmax(dim=0)
 show([MY_IMAGE], [MY_IMAGE], cols=1, size=2.6)
 print(pd.DataFrame({"문장": MY_TEXTS, "코사인": s.numpy().round(4), "softmax 확률": p.numpy().round(4)}).to_string(index=False))
 ''')
