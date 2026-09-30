@@ -42,7 +42,9 @@ md('''
 
 - 실행 : **Run → Run All Cells** (첫 실행은 모델 약 600MB 를 받는다. 이후 전체 약 30초)
 - 장치 : 셀 1 의 `DEVICE` — `auto`(있으면 NVIDIA GPU → 맥 Metal → CPU 순) · `cuda` · `mps` · `cpu`
-- **PyTorch 가 든 Jupyter 에서 연다** : 5-1 도커(http://localhost:8889) 또는 직접 설치(5-1/README.md). 4-1 의 8888 에는 PyTorch 가 없다
+- 어느 Jupyter 에서 열어도 된다 : 4-1 의 8888 · 5-1 도커 8889 · 직접 설치(5-1/README.md)
+  - PyTorch 가 없는 Jupyter(4-1 의 8888)에서는 셀 2 가 처음 한 번 PyTorch · transformers 를 설치한다(CPU 판 약 200MB, 1~3분)
+  - GPU 로 돌리려면 5-1/README.md 의 도커 GPU 또는 직접 설치
 - 사진은 `5-1/images/images.csv` 에 출처 · 라이선스와 함께 적혀 있다
 ''')
 
@@ -81,7 +83,9 @@ MY_IMAGE = "hh_on_01.jpg"
 md('''
 ### 셀 2 · 모델 불러오기 · 사진 목록
 - 셀 1 의 `DEVICE` 대로 장치를 고르고, 모델을 그 장치에 올린다
-- PyTorch 가 없는 Jupyter 에서 열면 여기서 멈추고 어디서 열어야 하는지 알려 준다
+- PyTorch · transformers 가 없으면 이 Jupyter 에 설치한다(처음 한 번). 받는 판은 `DEVICE` 와 컴퓨터로 정함
+  - NVIDIA GPU 가 보이면 CUDA 판(수 GB) · 맥은 Metal 이 든 기본판 · 그 밖은 CPU 판(약 200MB)
+  - 4-1 의 8888 컨테이너에는 GPU 가 연결되어 있지 않으므로 CPU 판이 설치됨
 - `CLIPModel` 하나에 이미지 타워 · 텍스트 타워 · 투영 · 온도가 다 들어 있다
 - `images.csv` : 파일 · 그룹 · 라벨 · 출처 · 라이선스
 ''')
@@ -93,6 +97,9 @@ from pathlib import Path
 for k, v in {"HF_HUB_VERBOSITY": "error", "TRANSFORMERS_VERBOSITY": "error",
              "HF_HUB_DISABLE_PROGRESS_BARS": "1", "HF_HUB_DISABLE_SYMLINKS_WARNING": "1"}.items():
     os.environ.setdefault(k, v)
+# 도커(4-1 · 5-1)는 모델을 hfcache 볼륨(/cache/hf)에 둔다 → 두 컨테이너가 한 번 받은 모델을 같이 씀
+if os.access("/cache", os.W_OK):
+    os.environ.setdefault("HF_HOME", "/cache/hf")
 warnings.filterwarnings("ignore", message="IProgress not found")
 
 import numpy as np
@@ -100,16 +107,29 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 from PIL import Image
-try:
-    import torch
-    from transformers import CLIPModel, CLIPProcessor
-    from transformers.utils import logging as hf_logging
-    hf_logging.disable_progress_bar()
-except ModuleNotFoundError as e:
-    raise ModuleNotFoundError(
-        f"'{e.name}' 가 없는 Jupyter 다. 이 노트북은 PyTorch 가 든 환경에서 연다\\n"
-        "  · 도커 : 5-1 폴더에서 docker compose up -d --build → http://localhost:8889  (4-1 의 8888 이 아님)\\n"
-        "  · 도커 없이(맥 Metal · NVIDIA GPU) : 5-1/README.md 의 '직접 설치'") from None
+# PyTorch · transformers 가 없는 Jupyter(4-1 의 8888 등)면 여기서 한 번 설치한다
+import importlib, importlib.util, shutil, subprocess, sys
+def pip_install(*args):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "--root-user-action=ignore", *args])
+if importlib.util.find_spec("torch") is None:
+    gpu = DEVICE == "cuda" or (DEVICE == "auto" and shutil.which("nvidia-smi") is not None)
+    if sys.platform == "darwin":                  # 맥 : 기본판에 Metal(mps) 이 들어 있음
+        kind, index = "맥 기본판(Metal)", []
+    elif gpu:                                     # 리눅스 기본판 = CUDA 포함 · 윈도는 CUDA 판 저장소
+        kind, index = "CUDA 판(수 GB)", [] if sys.platform.startswith("linux") else ["--index-url", "https://download.pytorch.org/whl/cu130"]
+    else:
+        kind, index = "CPU 판(약 200MB)", ["--index-url", "https://download.pytorch.org/whl/cpu"]
+    print(f"PyTorch 가 없어 이 Jupyter 에 설치 중 · {kind} · 처음 한 번만 (1~3분) ...")
+    pip_install(*index, "torch==2.14.*")
+if importlib.util.find_spec("transformers") is None or importlib.util.find_spec("safetensors") is None:
+    print("transformers 설치 중 · 처음 한 번만 ...")
+    pip_install("transformers==5.17.*", "safetensors")
+importlib.invalidate_caches()
+
+import torch
+from transformers import CLIPModel, CLIPProcessor
+from transformers.utils import logging as hf_logging
+hf_logging.disable_progress_bar()
 
 # 한글 글꼴 : 컨테이너 NanumGothic · 맥 AppleGothic · 윈도 Malgun Gothic 중 있는 것
 have = {f.name for f in font_manager.fontManager.ttflist}
