@@ -375,6 +375,8 @@ md('''
   - 지게차로 물으면 배경에 노란 건설 장비가 흐릿하게 보이는 2장(hh_off_02 · hh_on_11)에서 "있다" 가 나온다 — 사람도 가리기 어려워 환각 시험에서 뺐다
 - 지게차가 없는 실내 사진(hh_on_02)에 "지게차는 무슨 색인가?" — 질문이 "있다" 를 전제로 깔고 있다
 - 모두 안전모를 쓴 사진에 "몇 번째 사람이 안전모를 벗고 있나?"
+- 아는 척(장표 "다리를 3개로 그린 새도 2개라고 답함") : 익숙한 물체를 살짝 바꿔 그리고 개수를 묻는다 — 고리 6개짜리 오륜 · 손가락 6개 손 · 7각형 정지 표지(정상판 5 · 5 · 8 과 함께)
+  - 셀 8 의 검은 원은 사전 지식이 없는 도형이라 잘 셌다. 여기서는 "원래 몇 개인지 아는" 물체로 묻는다
 - 그래프의 최고 온도 : 문서 6 의 실제 값은 189 °C (15:00)
 ''')
 code('''
@@ -388,6 +390,42 @@ if said_yes:
 print("\\n[전제를 깐 질문] hh_on_02.jpg (지게차 없음 · 한 사람이 안전모를 씀)")
 for q in ["사진 속 지게차는 무슨 색인가?", "이 사진에서 몇 번째 사람이 안전모를 벗고 있나?", "이 사진에 지게차가 있나? 있으면 색을, 없으면 없다고 답해."]:
     print(f"  {q}\\n    → {ask('hh_on_02.jpg', q, 50)}")
+from PIL import ImageDraw
+def rings(k):                                  # 오륜처럼 고리 k개
+    cols = ["#0081C8", "#000000", "#EE334E", "#FCB131", "#00A651", "#7F3FBF"]
+    im = Image.new("RGB", (120 + 110 * k, 260), "white"); g = ImageDraw.Draw(im)
+    for i in range(k):
+        x, y = 80 + i * 110, (90 if i % 2 == 0 else 150)
+        g.ellipse([x - 60, y - 60, x + 60, y + 60], outline=cols[i % len(cols)], width=12)
+    return im
+def hand(k):                                   # 손가락 k개
+    im = Image.new("RGB", (360, 400), "white"); g = ImageDraw.Draw(im)
+    g.rounded_rectangle([90, 200, 270, 380], 40, fill="#F1C27D", outline="#8D5524", width=4)
+    for i in range(k):
+        x = 80 + i * 200 / (k - 1); top = 60 if 0 < i < k - 1 else 120
+        g.rounded_rectangle([x - 18, top, x + 18, 230], 18, fill="#F1C27D", outline="#8D5524", width=4)
+    return im
+def stop(k):                                   # 변이 k개인 정지 표지
+    im = Image.new("RGB", (360, 360), "white"); g = ImageDraw.Draw(im)
+    g.polygon([(180 + 150 * math.cos(2 * math.pi * i / k + math.pi / k), 180 + 150 * math.sin(2 * math.pi * i / k + math.pi / k)) for i in range(k)], fill="#C8102E")
+    g.text((150, 172), "STOP", fill="white")
+    return im
+CF = [("오륜 고리", rings, 5, 6, "How many rings are in this image? Answer with a single number."),
+      ("손가락", hand, 5, 6, "How many fingers does this hand have? Answer with a single number."),
+      ("정지 표지의 변", stop, 8, 7, "How many sides does this stop sign have? Answer with a single number.")]
+rows, shown = [], []
+for name, draw, usual, changed, q in CF:
+    for k in (usual, changed):
+        im = draw(k); a = ask(im, q, 4)
+        rows.append((name, "원래 모양" if k == usual else "바꾼 그림", k, a))
+        if k == changed:
+            shown.append((im, f"{name} {k}개 → 답 {a}"))
+print("\\n[아는 척] 익숙한 물체를 살짝 바꿔 그림")
+print(pd.DataFrame(rows, columns=["대상", "그림", "실제 개수", "답"]).to_string(index=False))
+fig, axes = plt.subplots(1, 3, figsize=(9, 2.8))
+for ax, (im, t) in zip(axes, shown):
+    ax.imshow(im); ax.set_title(t, fontsize=9); ax.axis("off")
+plt.tight_layout(); plt.show()
 print("\\n[수치 읽기] 문서 6 의 최고 온도 (실제 189 °C, 15:00)")
 print("  →", ask(docs.file[5], "그래프에서 가장 높은 온도 값과 그 시각만 답해.", 30, DOC_TOKENS))
 print(f"\\n{time.time() - t0:.0f}s")

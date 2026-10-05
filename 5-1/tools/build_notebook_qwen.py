@@ -414,6 +414,9 @@ md('''
 - 문서 스크린샷 6장(900×1100, 가상의 공정 · 안전 서식)을 **이미지로** 임베딩. 글자를 뽑아내는(OCR) 단계가 없다
 - 후보 = 문서 6장 + 사진 150장. 질의는 문서 제목을 그대로 쓰지 않고 바꿔 말한 한국어
 - 지시문 기본값과 `INS_DOC` 를 비교. CPU 에서 문서 한 장 약 13초 (이미지 토큰 약 950개)
+- CLIP 과 비교 : CLIP 은 한글을 못 읽으므로 **영어 질의 12개**(제목 수준 6 · 작은 글씨 속 내용 6)로 두 모델을 같은 후보에서 잰다
+  - CLIP 이 보는 문서 = 224×224 로 줄인 그림. 서식이 한국어라 CLIP 의 실패에는 "작은 글씨"와 "한글" 두 원인이 겹친다 → 224 그림을 띄워 글씨가 뭉개지는 것을 눈으로 본다
+  - CLIP 모델(약 600MB)은 여기서 받는다(셀 12 · 13 도 씀)
 ''')
 code('''
 # 셀 10 · 문서 스크린샷 검색
@@ -431,6 +434,32 @@ for label, ins in [("지시문 기본값", INS_DEFAULT), ("INS_DOC", INS_DOC)]:
     print(f"\\n[{label}] 1위가 정답 문서인 비율 {np.mean(hit):.2f}")
     for q, t, ok in zip(QUERIES, top, hit):
         print(f"  {'O' if ok else 'X'} {q} → {cand_names[t]}")
+
+# CLIP 과 비교 — 영어 질의, 같은 후보(문서 6 + 사진 150)
+from transformers import CLIPModel, CLIPProcessor
+clip = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").eval().to(DEV)
+cproc = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+cfeat = lambda o: getattr(o, "pooler_output", o).float().cpu()       # transformers 5 : 출력 객체면 투영 벡터를 꺼냄
+CLIP_CAND = F.normalize(torch.cat([cfeat(clip.get_image_features(**cproc(images=Image.open(path_of(f)).convert("RGB"), return_tensors="pt").to(DEV))) for f in cand_names]), dim=-1)
+EN_Q = [("pipe pressure test record", 0), ("hot work permit for welding", 1), ("monthly pump inspection checklist", 2),
+        ("toluene safety data sheet", 3), ("safety training schedule for October", 4), ("reactor temperature log chart", 5),
+        ("cooling water line P-1203", 0), ("fire watch person assigned", 1), ("bearing temperature 58 C", 2),
+        ("flash point 4 C", 3), ("fire drill date", 4), ("filter clogging reduced cooling water flow", 5)]
+gold = torch.tensor([g for _, g in EN_Q])
+S_clip = F.normalize(cfeat(clip.get_text_features(**cproc(text=[q for q, _ in EN_Q], return_tensors="pt", padding=True).to(DEV))), dim=-1) @ CLIP_CAND.T
+S_qwen = texts([q for q, _ in EN_Q], INS_DOC) @ CAND.T
+rate = lambda S, sl: float((S[sl].argmax(dim=1) == gold[sl]).float().mean())
+print("\\n[영어 질의 12개] 1위가 정답 문서인 비율 (후보 156장 · 찍기 0.006)")
+print(pd.DataFrame([(n, rate(S, slice(0, 12)), rate(S, slice(0, 6)), rate(S, slice(6, 12)), rate(S[:, :6], slice(0, 12)))
+                    for n, S in [("CLIP ViT-B/32", S_clip), ("Qwen3-VL-Emb (INS_DOC)", S_qwen)]],
+                   columns=["모델", "전체", "제목 수준 6", "작은 글씨 6", "문서 6장 안에서만(찍기 0.17)"]).to_string(index=False, float_format=lambda x: f"{x:.2f}"))
+for (q, g), c, w in zip(EN_Q, S_clip.argmax(dim=1).tolist(), S_qwen.argmax(dim=1).tolist()):
+    print(f"  {q:44s} CLIP {'O' if c == g else 'X'} {cand_names[c]:28s} Qwen {'O' if w == g else 'X'} {cand_names[w]}")
+fig, axes = plt.subplots(1, 2, figsize=(6.4, 3.6))
+for ax, (im, t) in zip(axes, [(Image.open(path_of(docs.file[2])).convert("RGB"), "원본 900×1100"),
+                              (Image.open(path_of(docs.file[2])).convert("RGB").resize((224, 224)), "CLIP 이 보는 224×224")]):
+    ax.imshow(im); ax.set_title(t, fontsize=9); ax.axis("off")
+plt.tight_layout(); plt.show()
 ''')
 
 md('''
@@ -451,13 +480,10 @@ print(pd.DataFrame(rows, columns=["차원", "벡터 1개(float32)", "① 기본 
 md('''
 ### 셀 12 · 대가 — 크기 · 속도를 CLIP 과 비교
 장표 「VL 임베딩 — 사용법」 3번 "사진만 · 대량 · 실시간 → CLIP 계열" — 크기와 속도가 그 이유.
-- 같은 사진 10장을 한 장씩 임베딩하는 시간. CLIP 모델(약 600MB)이 없으면 이 셀에서 받는다
+- 같은 사진 10장을 한 장씩 임베딩하는 시간. CLIP 모델은 셀 10 에서 불러 둠
 ''')
 code('''
 # 셀 12 · 대가 — 크기 · 속도
-from transformers import CLIPModel, CLIPProcessor
-clip = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").eval().to(DEV)
-cproc = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 sample = list(meta.file[:10])
 
 def per_image(fn):
