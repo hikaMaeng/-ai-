@@ -1,0 +1,80 @@
+# 5-2 실습 환경: 이미지 생성 — ComfyUI(엔진) + JupyterLab(실습 화면, ComfyUI 를 API 로 부림)
+#
+#   전제 : NVIDIA GPU(VRAM 16GB 이상 권장) + 도커가 GPU 를 컨테이너에 넘길 수 있는 PC
+#     확인 : docker run --rm --gpus all ubuntu:24.04 nvidia-smi -L
+#   모델 : ../4-1/comfyui/models 에 둔다 → tools/download_models.sh (약 75GB)
+#
+#   cd ./-ai-/5-2
+#   docker compose up -d --build
+#     첫 기동 : lab 이미지 빌드 2~4분 + comfy 가 ComfyUI 를 볼륨에 설치(약 5~10분, 인터넷 필요)
+#
+#   실습 화면 : Jupyter  http://localhost:8891  → 5-2/notebooks
+#   보조 화면 : ComfyUI  http://localhost:8188  → 노트북이 저장한 워크플로를 열어 보거나 직접 돌려 볼 때만
+#     노트북 안에서 ComfyUI 주소는 http://comfy:8188 (같은 도커 네트워크)
+#
+#   GPU 를 두 장 가진 PC : COMFY_GPU · LAB_GPU 에 서로 다른 번호(nvidia-smi -L 순서)를 주면 나눠 씀
+#     예) COMFY_GPU=0 LAB_GPU=1 docker compose up -d
+#   한 장이면 둘 다 0(기본). 노트북은 무거운 계산 전에 ComfyUI 메모리를 비운다(POST /free)
+#
+# 포트는 127.0.0.1 에만 연다(로그인 없는 Jupyter · ComfyUI 를 다른 기기가 열지 못하게)
+name: ai4-lab
+
+services:
+  comfy:
+    image: mmartial/comfyui-nvidia-docker:ubuntu24_cuda12.8-latest
+    container_name: ai4-comfy
+    ports:
+      - "127.0.0.1:${COMFY_PORT:-8188}:8188"
+    environment:
+      - TZ=Asia/Seoul
+      - BASE_DIRECTORY=/basedir          # 모델 · 노드 · 결과는 아래 바인드 마운트에, ComfyUI 본체 · venv 는 comfyrun 볼륨에
+      - WANTED_UID=0
+      - WANTED_GID=0
+      - USE_PIPUPGRADE=none              # 기동할 때마다 패키지를 올리지 않음(재현성)
+      - COMFY_CMDLINE_EXTRA=--preview-method latent2rgb   # 실행 중 KSampler 안에 단계별 완성본 추정을 그림(강의 「실행 중 미리보기」)
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - CUDA_DEVICE_ORDER=PCI_BUS_ID       # 번호를 nvidia-smi -L 순서와 같게
+      - CUDA_VISIBLE_DEVICES=${COMFY_GPU:-0}  # 도커 데스크톱은 device_ids 로 GPU 를 나누지 못함 → 프로세스가 볼 GPU 를 직접 지정
+    volumes:
+      - comfyrun:/comfy/mnt
+      - ../4-1/comfyui/models:/basedir/models
+      - ../4-1/comfyui/custom_nodes/ComfyUI-GGUF:/basedir/custom_nodes/ComfyUI-GGUF   # 양자화(GGUF) 모델을 읽는 노드 하나만
+      - ./workflows:/basedir/user/default/workflows/5-2                                 # 노트북이 쓴 워크플로 → 화면의 워크플로 목록
+      - ./outputs/comfy:/basedir/output
+      - ./comfy/userscripts:/userscripts_dir:ro                                          # 기동 때 GGUF 노드의 파이썬 패키지 설치
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${COMFY_GPU:-0}"]
+              capabilities: [gpu]
+
+  lab:
+    build: ./lab
+    image: ai4-lab/jupyter-gen
+    container_name: ai4-gen
+    ports:
+      - "127.0.0.1:${LAB_PORT:-8891}:8888"
+    environment:
+      - COMFY_URL=http://comfy:8188
+      - MODELS_DIR=/models
+      - CUDA_DEVICE_ORDER=PCI_BUS_ID
+      - CUDA_VISIBLE_DEVICES=${LAB_GPU:-0}
+    volumes:
+      - ..:/work                              # 저장소 루트
+      - hfcache:/cache                        # 4-1 · 5-1 과 같은 캐시 볼륨(설정 파일 · 토크나이저)
+      - ../4-1/comfyui/models:/models:ro      # ComfyUI 와 같은 모델 파일을 읽기 전용으로(SD1.5 · VAE · 웨이트 모양 읽기)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${LAB_GPU:-0}"]
+              capabilities: [gpu]
+    depends_on:
+      - comfy
+
+volumes:
+  comfyrun:
+  hfcache:
