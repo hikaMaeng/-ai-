@@ -48,3 +48,10 @@ tests/
 *.log
 .DS_Store
 Thumbs.db
+
+# ── ComfyUI (5-2) ────────────────────────────────────────────────────
+# 강사 PC 의 ComfyUI 자산(모델 수백 GB · 커스텀 노드 · 사용자 워크플로). 수강생은 5-2/tools/download_models.sh 로 받는다
+4-1/comfyui/
+# 5-2 실행 결과 (노트북이 ComfyUI 에서 받아 온 이미지 · 중간 산출물)
+5-2/outputs/
+5-2/screens/zseq_*.png
