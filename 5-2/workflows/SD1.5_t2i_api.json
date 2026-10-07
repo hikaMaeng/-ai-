@@ -1,0 +1,86 @@
+{
+ "1": {
+  "class_type": "CheckpointLoaderSimple",
+  "inputs": {
+   "ckpt_name": "v1-5-pruned-emaonly.safetensors"
+  }
+ },
+ "5": {
+  "class_type": "EmptyLatentImage",
+  "inputs": {
+   "width": 512,
+   "height": 512,
+   "batch_size": 1
+  }
+ },
+ "6": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "A photorealistic close-up of a calico cat wearing tiny round glasses, reading a newspaper with the headline \"NEURON DEV\", warm cafe lighting, ultra detailed",
+   "clip": [
+    "1",
+    1
+   ]
+  }
+ },
+ "7": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "",
+   "clip": [
+    "1",
+    1
+   ]
+  }
+ },
+ "9": {
+  "class_type": "KSampler",
+  "inputs": {
+   "model": [
+    "1",
+    0
+   ],
+   "seed": 42,
+   "steps": 20,
+   "cfg": 7.5,
+   "sampler_name": "ddim",
+   "scheduler": "ddim_uniform",
+   "positive": [
+    "6",
+    0
+   ],
+   "negative": [
+    "7",
+    0
+   ],
+   "latent_image": [
+    "5",
+    0
+   ],
+   "denoise": 1.0
+  }
+ },
+ "10": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "9",
+    0
+   ],
+   "vae": [
+    "1",
+    2
+   ]
+  }
+ },
+ "11": {
+  "class_type": "SaveImage",
+  "inputs": {
+   "images": [
+    "10",
+    0
+   ],
+   "filename_prefix": "5-2/05/SD1.5"
+  }
+ }
+}

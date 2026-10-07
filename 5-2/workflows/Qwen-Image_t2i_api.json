@@ -1,0 +1,109 @@
+{
+ "1": {
+  "class_type": "UnetLoaderGGUF",
+  "inputs": {
+   "unet_name": "qwen-image-Q4_K_M.gguf"
+  }
+ },
+ "2": {
+  "class_type": "CLIPLoaderGGUF",
+  "inputs": {
+   "clip_name": "Qwen2.5-VL-7B-Instruct-Q5_K_M.gguf",
+   "type": "qwen_image"
+  }
+ },
+ "3": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "qwen_image_vae.safetensors"
+  }
+ },
+ "4": {
+  "class_type": "ModelSamplingAuraFlow",
+  "inputs": {
+   "model": [
+    "1",
+    0
+   ],
+   "shift": 3.1
+  }
+ },
+ "5": {
+  "class_type": "EmptySD3LatentImage",
+  "inputs": {
+   "width": 1328,
+   "height": 1328,
+   "batch_size": 1
+  }
+ },
+ "6": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "A photorealistic close-up of a calico cat wearing tiny round glasses, reading a newspaper with the headline \"NEURON DEV\", warm cafe lighting, ultra detailed",
+   "clip": [
+    "2",
+    0
+   ]
+  }
+ },
+ "7": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "blurry, low quality, distorted, watermark, text artifacts",
+   "clip": [
+    "2",
+    0
+   ]
+  }
+ },
+ "9": {
+  "class_type": "KSampler",
+  "inputs": {
+   "model": [
+    "4",
+    0
+   ],
+   "seed": 42,
+   "steps": 20,
+   "cfg": 2.5,
+   "sampler_name": "euler",
+   "scheduler": "simple",
+   "positive": [
+    "6",
+    0
+   ],
+   "negative": [
+    "7",
+    0
+   ],
+   "latent_image": [
+    "5",
+    0
+   ],
+   "denoise": 1.0
+  }
+ },
+ "10": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "9",
+    0
+   ],
+   "vae": [
+    "3",
+    0
+   ]
+  }
+ },
+ "11": {
+  "class_type": "SaveImage",
+  "inputs": {
+   "images": [
+    "10",
+    0
+   ],
+   "filename_prefix": "5-2/05/Qwen-Image"
+  }
+ }
+}
