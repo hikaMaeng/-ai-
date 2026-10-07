@@ -197,6 +197,7 @@ docker exec -w /work/5-2/notebooks ai4-gen jupyter nbconvert --to notebook --exe
 - 다시 찍기 : `node tools/screens/capture.js` → `docker run --rm -v "<5-2/screens>:/s" -v "<5-2/tools/screens>:/w" ai4-lab/jupyter-clip python /w/annotate.py`
 - 로컬 그림을 구글 슬라이드에 넣을 때 : Codex 의 `batch_update_presentation` 에 `image_uris` = 로컬 경로 **하나**(여러 개를 넣으면 실패) → 그림마다 한 번씩 호출
 - 캡처는 두 번 돌았다 : 17:16 첫 실행(덱에 넣은 그림) · 17:42 재실행(README 를 고치던 셸 명령의 백틱이 `capture.js` 를 실행 — 의도하지 않음). 두 실행의 그래프 캡처로 만든 번호 표시 그림 7장은 픽셀 차이 0. 미리보기 띠만 프레임 시점이 달라(재실행엔 4단계 프레임이 없음) 첫 실행본을 유지했다
+- `screens/slide/D_strip.png`(미리보기 띠를 덱용으로 번호 없이 이은 그림)는 저장소에 올리지 않는다(.gitignore) — 푸시 보안 훅이 이 이미지를 토큰으로 오인해 차단. `c9_zimage_preview_strip.png` 에서 `tools/screens/preview_strip.py` 로 다시 만든다
 - `screens/zseq_*.png`(재실행 프레임 54장)는 저장소에 넣지 않는다(.gitignore)
 
 ## 강의 보강 실험 — mid 어텐션 끄기 (강의 덱 「mid 어텐션을 끄면 — 실측」, 2026-10-07)
