@@ -1,0 +1,40 @@
+# 6-1 실습 환경: 음성 모델 — JupyterLab 하나(모델은 노트북이 Hugging Face 에서 받아 hfcache 볼륨에 둠)
+#
+#   전제 : NVIDIA GPU(VRAM 16GB 권장 · 8GB 면 01 · 02 · 03 · 05) + 도커가 GPU 를 컨테이너에 넘길 수 있는 PC
+#     확인 : docker run --rm --gpus all ubuntu:24.04 nvidia-smi -L
+#   전제 : 4-1 의 Jupyter 이미지(ai4-lab/jupyter)를 한 번 빌드했다 → cd ../4-1 && docker compose build
+#
+#   cd ./-ai-/6-1
+#   docker compose up -d --build
+#     첫 기동 : 이미지 빌드 약 5~10분(PyTorch CUDA 판을 받음, 인터넷 필요)
+#
+#   실습 화면 : Jupyter  http://localhost:8892  → 6-1/notebooks
+#
+#   GPU 를 두 장 가진 PC : VOICE_GPU 에 쓸 번호(nvidia-smi -L 순서)를 준다 — 예) VOICE_GPU=1 docker compose up -d
+#
+# 포트는 127.0.0.1 에만 연다(로그인 없는 Jupyter 를 다른 기기가 열지 못하게)
+name: ai4-lab
+
+services:
+  voice:
+    build: ./lab
+    image: ai4-lab/jupyter-voice
+    container_name: ai4-voice
+    ports:
+      - "127.0.0.1:${VOICE_PORT:-8892}:8888"
+    environment:
+      - CUDA_DEVICE_ORDER=PCI_BUS_ID
+      - CUDA_VISIBLE_DEVICES=${VOICE_GPU:-0}   # 도커 데스크톱은 device_ids 로 GPU 를 나누지 못함 → 프로세스가 볼 GPU 를 직접 지정
+    volumes:
+      - ..:/work                               # 저장소 루트
+      - hfcache:/cache                         # 4-1 · 5-1 · 5-2 와 같은 캐시 볼륨(모델 · 데이터)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${VOICE_GPU:-0}"]
+              capabilities: [gpu]
+
+volumes:
+  hfcache:
