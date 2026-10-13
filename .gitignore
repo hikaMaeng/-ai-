@@ -57,5 +57,14 @@ Thumbs.db
 5-2/screens/zseq_*.png
 5-2/screens/slide/D_strip.png
 
-# 푸시 보안 오류 소거 진단: 6-1 하위 항목을 단계별로 추가
-6-1/
+# 6-1 후보 모델 확인 산출물(음성 · 데이터)
+6-1/tools/check_models/out/
+
+# Codex 용 작업 지침(로컬 전용 — 저장소에 올리지 않음)
+AGENTS.md
+
+# 6-1 노트북 실행과 무관한 강의·실험 작업물
+6-1/개편안.md
+6-1/tools/deckgen/
+6-1/tools/check_models/
+6-1/tools/slides-task-*.md
