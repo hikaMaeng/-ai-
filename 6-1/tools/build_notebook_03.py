@@ -1,0 +1,221 @@
+"""6-1 실습 노트북 03 생성기 (강사용).
+
+    python build_notebook_03.py   → ../notebooks/03_ASR_비교와_내데이터.ipynb (출력 없이)
+"""
+from nb import Book
+
+b = Book("03_ASR_비교와_내데이터.ipynb")
+
+b.md('''
+# 실습 03 · ASR 비교와 내 데이터 — Whisper vs Qwen3-ASR, 현장 용어, 지표의 정의
+
+장표 「E2E ASR 세 갈래」 · 「내 데이터로 측정」를 확인한다.
+공개 벤치마크(FLEURS) 점수와 **우리 현장 문장** 점수가 같은 순서로 나오는지, 지표를 어떻게 정의하느냐에 따라 숫자가 얼마나 바뀌는지 본다.
+
+| 셀 | 하는 일 | 장표 |
+|---|---|---|
+| 1 | 설정 — 현장 문장 10개 | – |
+| 2 | 데이터 · 공통 함수 | – |
+| 3 | FLEURS 한국어 — Whisper turbo vs Qwen3-ASR CER · 시간 · VRAM | 내 데이터로 측정 |
+| 4 | 지표의 정의가 숫자를 바꾼다 — 구두점 · 숫자 표기 | 내 데이터로 측정 |
+| 5 | 현장 문장 — 녹음(또는 합성) → 두 모델의 오류 | 내 데이터로 측정 |
+| 6 | 용어 목록을 미리 주면 — Qwen3-ASR 문맥 · Whisper 프롬프트 | 내 데이터로 측정 |
+| 7 | Qwen3-ASR 안 — 오디오 인코더(AuT) 초당 12.5줄 + LLM 디코더 | E2E ASR 세 갈래 |
+| 8 | 환각 비교 — 무음 · 잡음 · 모터 소리 | 음성 모달 한계 2번 |
+
+- 실행 : GPU 필수(VRAM 6GB 이상). Qwen3-ASR 1.7B(4.7GB) · Qwen3-TTS 1.7B(셀 5 기본 합성용, 4.5GB)를 처음 한 번 받음
+- **자기 목소리로 측정** : `6-1/data/my_voice/` 에 `domain_01.wav` ~ `domain_10.wav` 로 셀 1 의 문장을 녹음해 넣으면 셀 5 가 합성 대신 그 녹음을 쓴다(휴대폰 녹음 · 아무 샘플링레이트)
+''')
+
+b.md('''
+### 셀 1 · 설정
+- `DOMAIN` : 현장 문장 10개 — 숫자 · 단위 · 설비 이름 · 공정 용어가 섞인 것. 자기 현장의 문장으로 바꿔도 된다
+- `TERMS` : 셀 6 에서 모델에 미리 알려 줄 용어 목록
+''')
+b.code('''
+# 셀 1 · 설정
+N_EVAL = 40
+DOMAIN = [
+    "반응기 3번의 출구 온도가 설정값보다 12도 높습니다. 냉각수 밸브 개도를 확인하세요.",
+    "2번 펌프의 토출 압력이 4.5바로 떨어졌습니다. 흡입 측 스트레이너 막힘을 점검하세요.",
+    "증류탑 환류비를 2.3에서 2.8로 올리고 탑정 온도를 기록하세요.",
+    "열교환기 E-201의 오염계수가 기준치를 넘었습니다. 다음 정비 때 튜브를 세척합니다.",
+    "질소 퍼지가 끝나기 전에는 맨홀을 열지 마십시오.",
+    "톨루엔 저장 탱크의 액위가 85퍼센트에 도달했습니다.",
+    "인터록이 작동해 컴프레서가 정지했습니다. 진동 값이 7.1을 넘었습니다.",
+    "시료 채취 후 점도와 산가를 측정해 로트 번호와 함께 기록하세요.",
+    "보일러 급수 펌프의 베어링 온도가 상승하고 있습니다.",
+    "작업 허가서에 화기 작업 시간과 가스 측정 결과를 적으세요.",
+]
+TERMS = "반응기, 출구 온도, 설정값, 냉각수 밸브 개도, 토출 압력, 스트레이너, 증류탑, 환류비, 탑정 온도, 열교환기 E-201, 오염계수, 질소 퍼지, 맨홀, 톨루엔, 액위, 인터록, 컴프레서, 점도, 산가, 로트 번호, 급수 펌프, 베어링, 작업 허가서, 화기 작업"
+TTS_REF = 1          # 합성할 때 목소리를 빌릴 FLEURS 문장 번호
+''')
+
+b.md('''
+### 셀 2 · 데이터 · 공통 함수
+- 두 모델을 번갈아 올린다(한 번에 하나) — `asr_whisper` · `asr_qwen` 은 파형 목록을 받아 글 목록을 돌려줌
+''')
+b.code('''
+# 셀 2 · 데이터 · 공통 함수
+import sys, time, re; sys.path.insert(0, ".")
+from voice_common import *
+import torch
+from transformers import WhisperForConditionalGeneration, WhisperProcessor
+from qwen_asr import Qwen3ASRModel
+DEV = "cuda"; df = fleurs_ko()
+TURBO = "openai/whisper-large-v3-turbo"; QASR = "Qwen/Qwen3-ASR-1.7B"
+
+def asr_whisper(xs, prompt=None):
+    proc = WhisperProcessor.from_pretrained(TURBO)
+    m = WhisperForConditionalGeneration.from_pretrained(TURBO, torch_dtype=torch.float16).to(DEV).eval()
+    kw = {"prompt_ids": torch.tensor(proc.get_prompt_ids(prompt), device=DEV)} if prompt else {}
+    out = []
+    for z in xs:
+        f = proc(z, sampling_rate=SR, return_tensors="pt").input_features.to(DEV, torch.float16)
+        with torch.no_grad(): g = m.generate(f, language="korean", task="transcribe", **kw)
+        s = proc.tokenizer.decode(g[0], skip_special_tokens=True)
+        out.append(s.split(prompt)[-1].strip() if prompt and prompt in s else s.strip())
+    del m; gpu_free(); return out
+
+def asr_qwen(xs, context=""):
+    m = Qwen3ASRModel.from_pretrained(QASR, dtype=torch.bfloat16, device_map="cuda:0")
+    out = [r.text for r in m.transcribe(audio=[(z, SR) for z in xs], language="Korean", context=context)]
+    del m; gpu_free(); return out
+
+def timed(f, *a, **k):
+    gpu_free(); torch.cuda.reset_peak_memory_stats(); torch.cuda.synchronize(); t0 = time.time()
+    r = f(*a, **k); torch.cuda.synchronize(); return r, time.time() - t0, gpu_peak_gb()
+''')
+
+b.md('''
+### 셀 3 · FLEURS 한국어 — 두 모델
+- CER = 띄어쓰기를 뺀 **글자** 편집거리 ÷ 정답 글자 수(한국어는 띄어쓰기가 흔들려 단어 단위 WER 보다 글자 단위를 쓴다)
+- 시간에는 모델 올리는 시간이 들어 있다(첫 실행은 내려받는 시간도)
+''')
+b.code('''
+# 셀 3 · FLEURS 한국어 — 두 모델
+xs = [wav_of(df, i) for i in range(N_EVAL)]; refs = df["transcription"].iloc[:N_EVAL].tolist()
+print(f"{N_EVAL}문장 · 합계 {sum(len(z) for z in xs) / SR:.0f}초")
+hyp_w, t_w, v_w = timed(asr_whisper, xs)
+hyp_q, t_q, v_q = timed(asr_qwen, xs)
+R3 = pd.DataFrame([("whisper-large-v3-turbo", np.mean([cer(h, r) for h, r in zip(hyp_w, refs)]), t_w, v_w),
+                   ("Qwen3-ASR-1.7B", np.mean([cer(h, r) for h, r in zip(hyp_q, refs)]), t_q, v_q)],
+                  columns=["모델", "CER(그대로)", "시간(초)", "최대 VRAM(GB)"]).round(3)
+print(R3.to_string(index=False))
+''')
+
+b.md('''
+### 셀 4 · 지표의 정의가 숫자를 바꾼다
+- 정답 글에는 구두점이 없고 숫자를 「15미터」처럼 적는 경우가 있다. 모델은 「15m.」처럼 낸다 — 뜻은 같아도 **글자로는 오류**
+- 같은 결과를 ① 그대로 ② 구두점 제거 ③ 구두점 + 단위 표기 통일로 다시 측정 → 순위 · 크기가 어떻게 바뀌나
+- 시리즈 원칙 : 지표가 목적을 대신하게 두지 말 것 — 「CER 몇 %」보다 **틀린 글자가 무엇인지** 직접 본다
+''')
+b.code('''
+# 셀 4 · 지표의 정의가 숫자를 바꾼다
+UNIT = {"m": "미터", "km": "킬로미터", "kg": "킬로그램", "%": "퍼센트", "cm": "센티미터"}
+def norm_units(s):
+    s = strip_punct(s.replace("%", " 퍼센트"))
+    for k, v in UNIT.items(): s = re.sub(rf"(\\d)\\s*{k}\\b", rf"\\1{v}", s)
+    return s
+rows = []
+for name, hyp in (("turbo", hyp_w), ("Qwen3-ASR", hyp_q)):
+    rows.append((name, np.mean([cer(h, r) for h, r in zip(hyp, refs)]),
+                 np.mean([cer(strip_punct(h), strip_punct(r)) for h, r in zip(hyp, refs)]),
+                 np.mean([cer(norm_units(h), norm_units(r)) for h, r in zip(hyp, refs)])))
+R4 = pd.DataFrame(rows, columns=["모델", "① 그대로", "② 구두점 제거", "③ + 단위 통일"]).round(3)
+print(R4.to_string(index=False))
+bad = sorted(range(N_EVAL), key=lambda i: -cer(norm_units(hyp_w[i]), norm_units(refs[i])))[:4]
+for i in bad: print(f"\\n정답  {refs[i]}\\nturbo {hyp_w[i]}\\nQwen  {hyp_q[i]}")
+''')
+
+b.md('''
+### 셀 5 · 현장 문장
+- `data/my_voice/domain_01.wav` ~ `domain_10.wav` 가 있으면 그 녹음을 쓴다
+- 없으면 **합성 음성**을 만든다 : Qwen3-TTS 가 FLEURS 화자(`TTS_REF`)의 목소리로 셀 1 의 문장을 읽음(만드는 법은 06)
+  - 주의 : 합성 음성은 사람 녹음보다 깨끗하고, TTS 자체가 용어를 잘못 읽을 수 있다 → **자기 녹음이 진짜 측정**
+''')
+b.code('''
+# 셀 5 · 현장 문장
+my = DATA / "my_voice"; my.mkdir(exist_ok=True)
+files = [my / f"domain_{k + 1:02d}.wav" for k in range(len(DOMAIN))]
+if all(f.exists() for f in files):
+    src = "자기 녹음"; dx = [load_wav(f) for f in files]
+else:
+    src = "합성(Qwen3-TTS)"; syn = DATA / "domain_tts"; syn.mkdir(exist_ok=True)
+    sf_ = [syn / f"domain_{k + 1:02d}.wav" for k in range(len(DOMAIN))]
+    if not all(f.exists() for f in sf_):
+        from qwen_tts import Qwen3TTSModel
+        tts = Qwen3TTSModel.from_pretrained("Qwen/Qwen3-TTS-12Hz-1.7B-Base", device_map="cuda:0", dtype=torch.bfloat16)
+        wavs, sr = tts.generate_voice_clone(text=DOMAIN, language=["Korean"] * len(DOMAIN),
+                                            ref_audio=[(wav_of(df, TTS_REF), SR)] * len(DOMAIN), ref_text=[df.iloc[TTS_REF]["transcription"]] * len(DOMAIN))
+        for f, w in zip(sf_, wavs): sf.write(f, w, sr)
+        del tts; gpu_free()
+    dx = [load_wav(f) for f in sf_]
+print("현장 문장 소리 :", src, "·", len(dx), "개")
+dw = asr_whisper(dx); dq = asr_qwen(dx)
+R5 = pd.DataFrame({"정답": DOMAIN, "turbo": dw, "Qwen3-ASR": dq})
+R5["CER turbo"] = [cer(norm_units(h), norm_units(r)) for h, r in zip(dw, DOMAIN)]
+R5["CER Qwen"] = [cer(norm_units(h), norm_units(r)) for h, r in zip(dq, DOMAIN)]
+print(f"FLEURS(③) turbo {R4.iloc[0, 3]:.3f} · Qwen {R4.iloc[1, 3]:.3f}  vs  현장 문장 turbo {R5['CER turbo'].mean():.3f} · Qwen {R5['CER Qwen'].mean():.3f}")
+print("※ Qwen3-ASR 는 숫자를 한글로 적는 경우가 많다(2.3 → 이점삼) — 뜻은 맞아도 글자로는 오류. 무엇을 오류로 셀지 먼저 정하는 것이 측정의 시작")
+for _, r in R5.iterrows(): print(f"\\n정답  {r['정답']}\\nturbo {r['turbo']}\\nQwen  {r['Qwen3-ASR']}")
+play(dx[0], label="현장 문장 1")
+''')
+
+b.md('''
+### 셀 6 · 용어 목록을 미리 주면
+- Qwen3-ASR : `context` 에 글을 주면 LLM 디코더가 그 글을 앞에 두고 받아씀 → 용어가 그쪽으로 끌림(2강 : 앞 토큰이 다음 토큰 분포를 바꿈)
+- Whisper : `prompt_ids` 에 글을 주면 「앞 구간의 자막」처럼 디코더 앞에 붙음
+- 같은 소리, 같은 모델 — 바뀐 것은 **앞에 둔 글뿐**
+''')
+b.code('''
+# 셀 6 · 용어 목록을 미리 주면
+dw2 = asr_whisper(dx, prompt=TERMS); dq2 = asr_qwen(dx, context=TERMS)
+R6 = pd.DataFrame([("turbo", R5["CER turbo"].mean(), np.mean([cer(norm_units(h), norm_units(r)) for h, r in zip(dw2, DOMAIN)])),
+                   ("Qwen3-ASR", R5["CER Qwen"].mean(), np.mean([cer(norm_units(h), norm_units(r)) for h, r in zip(dq2, DOMAIN)]))],
+                  columns=["모델", "용어 없이", "용어 목록 줌"]).round(3)
+print(R6.to_string(index=False))
+for i in range(len(DOMAIN)):
+    if dq[i] != dq2[i] or dw[i] != dw2[i]:
+        print(f"\\n정답       {DOMAIN[i]}\\nQwen 전/후  {dq[i]}  →  {dq2[i]}\\nturbo 전/후 {dw[i]}  →  {dw2[i]}")
+''')
+
+b.md('''
+### 셀 7 · Qwen3-ASR 안
+- Qwen3-ASR = **오디오 인코더(AuT)** + **LLM(Qwen3)** — Whisper 의 「작은 글자 디코더」 자리에 LLM 을 넣은 구조(장표 세 갈래 중 LLM 디코더)
+- 오디오 인코더 출력이 초당 몇 줄인지 직접 측정한다(Whisper 50 과 비교)
+''')
+b.code('''
+# 셀 7 · Qwen3-ASR 안
+m = Qwen3ASRModel.from_pretrained(QASR, dtype=torch.bfloat16, device_map="cuda:0")
+core = m.model
+n = lambda mod: sum(p.numel() for p in mod.parameters()) / 1e6
+parts = {k: v for k, v in core.named_children()}
+print("최상위 부품 :", {k: f"{n(v):.0f}M" for k, v in parts.items()})
+th = getattr(core, "thinker", core)
+print("thinker 안 :", {k: f"{n(v):.0f}M" for k, v in th.named_children()})
+enc = th.audio_tower
+got = []
+h = enc.register_forward_hook(lambda mod, i, o: got.append(tuple((o[0] if isinstance(o, tuple) else getattr(o, "last_hidden_state", o)).shape)))
+z = wav_of(df, 0); m.transcribe(audio=[(z, SR)], language="Korean"); h.remove()
+L = len(z) / SR
+rows_ = got[0][-2]
+print(f"{L:.2f}초 → 오디오 인코더 출력 {got[0]} = {rows_}줄 × 폭 {got[0][-1]} → 초당 {rows_ / L:.1f}줄 (설계 12.5 · 마지막 조각을 채우며 몇 줄 더 · Whisper 인코더는 초당 50)")
+print("출력 폭 = LLM 폭 2048 → 인코더 끝에서 이미 LLM 토큰 벡터의 폭으로 바뀌어 나옴(커넥터가 인코더 안에)")
+del m, core, th, enc; gpu_free()          # 부품 참조까지 지워야 GPU 메모리가 풀림
+''')
+
+b.md('''
+### 셀 8 · 환각 비교
+- 02 셀 8 과 같은 소리를 Qwen3-ASR 에도 넣는다 — 학습 데이터가 다르면 지어내는 말도 다르다
+''')
+b.code('''
+# 셀 8 · 환각 비교
+t = np.arange(10 * SR) / SR; rng = np.random.default_rng(0)
+tests = {"무음 10초": np.zeros(10 * SR, np.float32), "백색잡음 10초": (0.05 * rng.standard_normal(10 * SR)).astype(np.float32),
+         "모터 소리": (0.1 * sum(np.sin(2 * np.pi * 60 * k * t) / k for k in range(1, 8))).astype(np.float32)}
+hw = asr_whisper(list(tests.values())); hq = asr_qwen(list(tests.values()))
+print(pd.DataFrame({"입력": list(tests), "turbo": hw, "Qwen3-ASR": hq}).to_string(index=False))
+''')
+
+b.save()
