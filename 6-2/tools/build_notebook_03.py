@@ -1,0 +1,479 @@
+"""6-2 실습 노트북 03 생성기 (강사용). 셀 내용을 여기서 고치고 다시 만든다.
+
+    python build_notebook_03.py   → ../notebooks/03_상상_속_정책_학습.ipynb (출력 없이)
+"""
+from nb import Book
+
+b = Book("03_상상_속_정책_학습.ipynb")
+
+b.md('''
+# 실습 03 · 상상 속 정책 학습 — 진자 스윙업으로 해 보는 Dreamer 축소판
+
+**직접 해 보는 것** : 막대 진자를 거꾸로 세우는 문제(스윙업)에서, **실제 환경을 거의 쓰지 않고 월드모델 안에서 정책을 학습**한다. 실제 데이터 → 월드모델 학습 → 모델 속 상상으로 정책 학습 → 다시 실제 수집을 돌리고, 같은 실제 스텝 수의 모델 없는 기준선과 비교한다. 마지막에는 모델이 틀렸을 때 정책이 그 **틀린 곳을 악용**하는 모습을 측정한다.
+
+**강의의 개념과 이어지는 곳** : 월드모델 학습(정답 = 실제 다음 값)과 정책 학습(정답 = 모델이 예측한 보상과 가치로 만든 λ-return)의 분리 · actor(행동을 내는 신경망) · critic(앞으로 받을 합계를 추정하는 신경망) · 상상 rollout 길이 H · 모델 오차 악용.
+
+| 셀 | 하는 일 |
+|---|---|
+| 1 | 설정 |
+| 2 | 환경(진자)과 무작위 정책의 기준 수익 |
+| 3 | 월드모델 학습 — 정답 = 실제 다음 값, 예측 오차 측정 |
+| 4 | λ-return 손 계산 = 함수값 |
+| 5 | 상상 속 학습 부품 — actor · critic · 상상 rollout (실제 환경 호출 없음) |
+| 6 | 루프 — 실제 수집 → 모델 학습 → 상상 속 정책 학습, 실제 스텝 수 대 수익 곡선 |
+| 7 | 비교 — 같은 실제 스텝 수의 모델 없는 기준선(DDPG 풍) |
+| 8 | 모델 오차 악용 — 상상 수익 vs 실제 수익의 간극 |
+| 9 | 정리 · 확인 질문 3개 |
+
+- 실행 : **Run → Run All Cells**. **CPU 로 돌아간다** — 신경망이 아주 작아서(은닉 64) 한 번 갱신하는 데 GPU 로 보내는 비용이 더 크다(셀 5 에서 직접 측정). 외부 데이터 없이 직접 만든 진자만 쓴다
+- 결과를 바꾸는 설정(시드 · 스텝 수 · 학습률 · 표본 수)은 출력에 모두 찍는다. 결과가 기대와 달라도 그대로 남긴다
+''')
+
+b.md('''
+### 셀 1 · 설정
+
+**왜 이 셀을 도는가** : 모든 숫자가 어떤 설정에서 나왔는지 한곳에 찍는다.
+
+**약속** : 「실제 스텝」 = 실제 진자를 한 번 움직인 횟수. 정책 평가용 실행(10 에피소드)은 학습에 쓰지 않는 측정 전용이라 실제 스텝에 세지 않는다. 월드모델 속에서 움직인 횟수는 실제 스텝이 아니다.
+''')
+b.code('''
+# 셀 1 · 설정
+import sys; sys.path.insert(0, ".")
+from wm_common import *
+import copy
+
+DEV = "cpu"                 # 이 노트북은 CPU 에서 돌린다(셀 5 에서 CPU 와 GPU 속도를 직접 비교)
+torch.set_num_threads(4)
+
+SEEDS = (0, 1, 2)           # 시드 3개
+GAMMA, LAM = 0.99, 0.95     # 할인율 · λ-return 의 λ
+R_SCALE = 0.1               # 학습할 때 보상에 곱하는 크기 맞춤(값을 −수십 수준으로)
+HID = 64                    # 월드모델 · actor · critic 은닉 유닛 수(은닉층 2개)
+H_IMAG = 30                 # 상상 rollout 길이 H
+B_IMAG = 64                 # 상상을 시작할 상태 수(배치)
+LR_ACTOR, LR_CRITIC = 1e-3, 1e-3
+INIT_EPS, ROUND_EPS, ROUNDS = 2, 1, 6      # 처음 무작위 2에피소드(400스텝) + 라운드마다 1에피소드(200스텝) × 6
+POLICY_UPDATES, MODEL_UPDATES = 200, 200   # 라운드마다 상상 속 정책 갱신 · 월드모델 추가 갱신 횟수
+EXPLORE_NOISE = 0.4         # 수집할 때 행동에 더하는 잡음 표준편차(토크 단위)
+N_EVAL = 10                 # 정책 평가 에피소드 수(시작 상태는 모든 방법이 같음)
+print("장치 :", DEV, "· 스레드", torch.get_num_threads())
+print(f"시드 {SEEDS} · γ={GAMMA} · λ={LAM} · 보상 크기 {R_SCALE} · 은닉 {HID}x2 · 상상 길이 H={H_IMAG} · 상상 시작 상태 {B_IMAG}개")
+print(f"학습률 actor {LR_ACTOR} critic {LR_CRITIC} · 처음 {INIT_EPS * 200}스텝 + 라운드마다 {ROUND_EPS * 200}스텝 × {ROUNDS}회 = 실제 {INIT_EPS * 200 + ROUND_EPS * 200 * ROUNDS}스텝")
+print(f"라운드마다 정책 갱신 {POLICY_UPDATES}회 · 월드모델 추가 갱신 {MODEL_UPDATES}회 · 수집 잡음 {EXPLORE_NOISE} · 평가 {N_EVAL}에피소드")
+''')
+
+b.md('''
+### 셀 2 · 환경(진자)과 무작위 정책의 기준 수익
+
+**왜 이 셀을 도는가** : 풀려는 문제와 **아무것도 안 배웠을 때의 점수**를 먼저 본다. 이후 모든 곡선은 이 기준 위에서 읽는다.
+
+**환경** : 표준 진자(g = 10, 질량 = 길이 = 1, dt = 0.05, **최대 토크 2** — 토크가 약해서 한 번에 밀어 올릴 수 없고 좌우로 흔들며 에너지를 모아야 한다). 상태 (각도 θ, 각속도 θ̇), 관측 (cos θ, sin θ, θ̇). 한 에피소드 200스텝, θ = 0 이 꼭대기. 보상 = −(θ² + 0.1·θ̇² + 0.001·u²)(0 에 가까울수록 좋음 — 꼭대기에 서 있으면 0 에 수렴).
+
+**읽는 법** : 무작위 행동의 수익은 대략 −1,300 안팎(거의 늘 아래쪽에 있어서). 잘 세우면 −150 이하(처음에 아래에서 올라가는 구간의 손실만 남음).
+''')
+b.code('''
+# 셀 2 · 환경과 무작위 정책
+G_, DT, MAX_TORQUE, EP = 10.0, 0.05, 2.0, 200
+def angle_norm(x): return ((x + math.pi) % (2 * math.pi)) - math.pi
+
+class Pendulum:
+    """n 개의 진자를 한꺼번에 시뮬레이션. 관측 = (cos θ, sin θ, θ̇)"""
+    def __init__(s, n, seed):
+        s.gen = torch.Generator(device=DEV); s.gen.manual_seed(seed); s.n = n; s.reset()
+    def reset(s):
+        s.th = (torch.rand(s.n, generator=s.gen, device=DEV) * 2 - 1) * math.pi          # 시작 각도 : 아무 곳이나
+        s.thd = (torch.rand(s.n, generator=s.gen, device=DEV) * 2 - 1)                    # 시작 각속도 : −1 ~ 1
+        return s.obs()
+    def obs(s): return torch.stack([s.th.cos(), s.th.sin(), s.thd], 1)
+    def step(s, u):
+        u = u.clamp(-MAX_TORQUE, MAX_TORQUE).reshape(-1)
+        r = -(angle_norm(s.th) ** 2 + 0.1 * s.thd ** 2 + 0.001 * u ** 2)
+        s.thd = (s.thd + (3 * G_ / 2 * s.th.sin() + 3.0 * u) * DT).clamp(-8, 8)
+        s.th = s.th + s.thd * DT
+        return s.obs(), r
+
+def collect(policy, n_ep, seed, noise=0.0):
+    """에피소드 n_ep 개를 200스텝씩 실제 환경에서 실행 → 전이 (관측, 행동, 보상, 다음 관측) 묶음. policy=None 이면 무작위 행동"""
+    env = Pendulum(n_ep, seed); o = env.reset(); O, A, R, O2 = [], [], [], []
+    for t in range(EP):
+        with torch.no_grad():
+            a = (torch.rand(n_ep, device=DEV) * 2 - 1) * MAX_TORQUE if policy is None else policy(o)
+            if policy is not None and noise > 0:
+                a = (a + noise * torch.randn_like(a)).clamp(-MAX_TORQUE, MAX_TORQUE)
+        o2, r = env.step(a); O.append(o); A.append(a); R.append(r); O2.append(o2); o = o2
+    f = lambda L: torch.stack(L, 1).reshape(n_ep * EP, -1)
+    return f(O), f(A), f(R), f(O2)
+
+@torch.no_grad()
+def evaluate(actor, n=N_EVAL, seed=5000):
+    """정책을 실제 진자에서 n 에피소드 실행한 수익(200스텝 보상 합). 시작 상태는 seed 로 고정 → 모든 방법이 같은 시작 상태"""
+    env = Pendulum(n, seed); o = env.reset(); tot = torch.zeros(n, device=DEV)
+    for t in range(EP):
+        o, r = env.step(actor(o)); tot += r
+    return tot.cpu().numpy()
+
+seed_all(0)
+O, A, R, O2 = collect(None, 20, 0)
+rand_ret = R.view(20, EP).sum(1).numpy()
+print(f"무작위 정책 20에피소드 수익 : 평균 {rand_ret.mean():.0f} · 표준편차 {rand_ret.std():.0f}  (실제 스텝 {len(O)})")
+fig, ax = plt.subplots(1, 2, figsize=(10, 3.4))
+ax[0].plot(R.view(20, EP)[0].numpy()); ax[0].set_title("무작위 정책 한 에피소드의 스텝 보상"); ax[0].set_xlabel("스텝")
+ax[1].hist(rand_ret, bins=8); ax[1].set_title("무작위 정책 에피소드 수익 분포"); ax[1].set_xlabel("수익")
+plt.tight_layout(); plt.show()
+''')
+
+b.md('''
+### 셀 3 · 월드모델 학습 — 정답은 「실제로 다음에 일어난 일」
+
+**왜 이 셀을 도는가** : 월드모델 학습은 **실제 데이터에 대한 지도학습**이다. 입력 = (관측, 행동), 정답 = **실제 환경이 낸 다음 관측과 보상**. 정책은 아직 등장하지 않는다 — 이 분리가 이 방식의 핵심이다. (정책 학습의 정답은 셀 4~5 에서 보듯 모델 안에서 만든 값이다.)
+
+**하는 일** : 무작위 행동 5에피소드(1,000스텝)로 작은 MLP(은닉 64 × 2)를 학습하고, 한 번도 안 본 무작위 행동 데이터에서 **1스텝 예측 오차**와 **15스텝 개루프 예측 오차**(예측을 되먹임)를 측정한다.
+
+**읽는 법** : 표의 「값의 표준편차」(정답 자체가 흔들리는 크기)와 비교해 오차가 얼마나 작은지 본다. 개루프 15스텝 오차가 1스텝보다 커지는 것이 누적 오차다.
+''')
+b.code('''
+# 셀 3 · 월드모델 학습과 예측 오차
+OBS_SCALE = torch.tensor([0.3, 0.3, 1.5])           # 다음 관측 − 지금 관측 을 이 크기로 나눠 학습(정규화)
+
+class World(nn.Module):
+    """월드모델 : (관측, 행동) → (다음 관측, 보상). 다음 관측의 (cos, sin)은 크기 1 로 다시 맞춘다"""
+    def __init__(s, h=HID):
+        super().__init__(); s.net = mlp(4, 4, h, layers=2)
+    def forward(s, o, a):
+        x = torch.cat([o[:, :2], o[:, 2:3] / 8, a.reshape(-1, 1) / MAX_TORQUE], 1)
+        out = s.net(x); o2 = o + out[:, :3] * OBS_SCALE
+        return torch.cat([F.normalize(o2[:, :2], dim=1), o2[:, 2:3].clamp(-8, 8)], 1), out[:, 3] * 10
+
+def fit_world(model, buf, steps, lr=1e-3, bs=256, opt=None):
+    """정답 = 실제 데이터의 다음 관측 · 보상(지도학습). 같은 옵티마이저를 이어서 쓸 수 있게 돌려줌"""
+    O, A, R, O2 = buf
+    opt = opt or torch.optim.Adam(model.parameters(), lr)
+    for _ in range(steps):
+        ix = torch.randint(0, len(O), (bs,))
+        x = torch.cat([O[ix][:, :2], O[ix][:, 2:3] / 8, A[ix] / MAX_TORQUE], 1); out = model.net(x)
+        loss = F.mse_loss(out[:, :3], (O2[ix] - O[ix]) / OBS_SCALE) + F.mse_loss(out[:, 3:4], R[ix] / 10)
+        opt.zero_grad(); loss.backward(); opt.step()
+    return opt
+
+WM_STEPS = 1500
+seed_all(0); t0 = time.time()
+buf3 = collect(None, 5, 0)                                   # 무작위 5에피소드 = 1,000스텝
+wm = World(); fit_world(wm, buf3, WM_STEPS)
+print(f"월드모델 학습 : 데이터 {len(buf3[0])}스텝 · 갱신 {WM_STEPS}회(배치 256) · 학습률 1e-3 · {time.time() - t0:.1f}초")
+
+Ot, At, Rt, O2t = collect(None, 10, 99)                      # 따로 모은 시험 데이터(시드가 다름)
+with torch.no_grad():
+    p, rp = wm(Ot, At)
+    one = [float(((p[:, i] - O2t[:, i]) ** 2).mean().sqrt()) for i in range(3)] + [float(((rp - Rt[:, 0]) ** 2).mean().sqrt())]
+    # 15스텝 개루프 : 시험 에피소드의 처음 상태에서 행동열만 주고 모델 예측을 이어 가기
+    o = Ot.view(10, EP, 3)[:, 0]; At_ = At.view(10, EP); th_err = []
+    for h in range(15):
+        o, _ = wm(o, At_[:, h]); th_err.append((o - O2t.view(10, EP, 3)[:, h]))
+    e15 = th_err[-1]; open15 = [float((e15[:, i] ** 2).mean().sqrt()) for i in range(3)]
+tab3 = pd.DataFrame({"값의 표준편차": [float(O2t[:, i].std()) for i in range(3)] + [float(Rt.std())],
+                     "1스텝 RMSE": one, "15스텝 개루프 RMSE": open15 + [float("nan")]}, index=["cos θ", "sin θ", "θ̇", "보상"]).round(4)
+tab3
+''')
+
+b.md('''
+### 셀 4 · λ-return 손 계산
+
+**왜 이 셀을 도는가** : 상상 속 정책 학습의 정답은 실제 보상이 아니라 **모델이 예측한 보상과 critic 이 추정한 가치로 만든 λ-return**이다. 식 한 줄을 손으로 풀어 함수와 같은지 확인한다.
+
+**식** : 상상 궤적 H스텝에서 스텝 t 의 λ-return 은 끝에서부터 이렇게 쌓는다.
+- 맨 끝 : R_H = V(s_H) (끝 상태의 가치 추정)
+- R_t = r_t + γ · [ (1 − λ)·V(s_(t+1)) + λ·R_(t+1) ]
+
+λ = 0 이면 「한 스텝 보상 + 다음 가치」(TD, critic 을 많이 믿음), λ = 1 이면 「끝까지의 보상 합 + 끝 가치」(모델 보상을 많이 믿음). 그 사이를 섞은 것이 λ-return.
+
+**읽는 법** : 4스텝 가상 궤적(보상 −1.0, −0.8, −0.5, −0.2 / critic 가치 V(s₁..s₄) = −30, −25, −20, −15)으로 손 계산한 값과 함수 값이 같은지, 그리고 λ = 1 일 때 보상의 할인 합 + γ⁴V 와 같은지 본다.
+''')
+b.code('''
+# 셀 4 · λ-return 손 계산 = 함수값
+def lambda_return(r, v_next, gamma=GAMMA, lam=LAM):
+    """r, v_next : (B, H).  v_next[:, t] = V(s_(t+1)).  R_t = r_t + γ[(1-λ)·V(s_(t+1)) + λ·R_(t+1)],  R_H := V(s_H).  반환 (B, H) : R_0 … R_(H-1)"""
+    H = r.shape[1]; R = v_next[:, -1]; out = [None] * H
+    for t in reversed(range(H)):
+        R = r[:, t] + gamma * ((1 - lam) * v_next[:, t] + lam * R); out[t] = R
+    return torch.stack(out, 1)
+
+r_ = [-1.0, -0.8, -0.5, -0.2]; v_ = [-30.0, -25.0, -20.0, -15.0]            # r_t, V(s_(t+1)) (t = 0..3)
+g, l = GAMMA, LAM
+R3 = r_[3] + g * v_[3]                                                       # 맨 끝 : R_4 = V(s_4) = −15 → R_3 = r_3 + γ·V(s_4)
+R2 = r_[2] + g * ((1 - l) * v_[2] + l * R3)
+R1 = r_[1] + g * ((1 - l) * v_[1] + l * R2)
+R0 = r_[0] + g * ((1 - l) * v_[0] + l * R1)
+for t, R_ in zip((3, 2, 1, 0), (R3, R2, R1, R0)):
+    print(f"손 계산 R_{t} = {R_:.4f}")
+fn = lambda_return(torch.tensor([r_]), torch.tensor([v_]))[0]
+print("함수값 R_0..R_3 :", [round(float(x), 4) for x in fn], " · 최대 차이", f"{max(abs(float(fn[i]) - R_) for i, R_ in enumerate((R0, R1, R2, R3))):.2e}")
+mc = sum(g ** t * r_[t] for t in range(4)) + g ** 4 * v_[3]                  # λ = 1 : 보상 할인 합 + γ⁴·V(s_4)
+print(f"λ=1 : 손 계산 {mc:.4f} · 함수값 {float(lambda_return(torch.tensor([r_]), torch.tensor([v_]), lam=1.0)[0, 0]):.4f}")
+td = r_[0] + g * v_[0]                                                         # λ = 0 : r_0 + γ·V(s_1)
+print(f"λ=0 : 손 계산 {td:.4f} · 함수값 {float(lambda_return(torch.tensor([r_]), torch.tensor([v_]), lam=0.0)[0, 0]):.4f}")
+''')
+
+b.md('''
+### 셀 5 · 상상 속 학습 — actor · critic · rollout
+
+**왜 이 셀을 도는가** : 이 노트북의 중심. **실제 환경을 한 번도 부르지 않고** 정책을 학습하는 한 번의 갱신이 이렇게 돈다.
+1. 버퍼(지금까지 모은 실제 데이터)에서 **시작 상태**를 64개 뽑는다
+2. **actor** 가 낸 행동을 월드모델에 넣어 다음 상태와 보상을 **예측**하고, 그 상태에서 다시 actor … 를 **H = 30스텝** 반복(상상 rollout)
+3. critic 으로 각 상태의 가치를 추정해 **λ-return**(셀 4)을 만든다
+4. **actor 갱신** : λ-return 이 커지도록. 행동이 연속값이라, 모델과 보상 예측을 통과해 흘러 온 **기울기**로 actor 를 직접 고친다(월드모델 자신은 이 단계에서 고치지 않는다)
+5. **critic 갱신** : critic(상태) 이 λ-return(고정된 정답)을 따라가도록
+
+**약속** : 월드모델 · critic 의 목표 복사본(느리게 따라가는 사본)을 가치 부트스트랩에 쓴다. 상상 속 보상에는 `R_SCALE`(0.1)을 곱한다.
+
+**읽는 법** : 아래 속도 측정은 갱신 한 번에 걸리는 시간(ms). 이 노트북이 CPU 로 도는 이유를 숫자로 보여 준다(GPU 가 없는 PC 에서는 CPU 줄만 나온다).
+''')
+b.code('''
+# 셀 5 · actor · critic · 상상 rollout (실제 환경 호출 없음)
+class Actor(nn.Module):
+    def __init__(s): super().__init__(); s.net = mlp(3, 1, HID, 2)
+    def forward(s, o): return MAX_TORQUE * torch.tanh(s.net(torch.cat([o[:, :2], o[:, 2:3] / 8], 1))).reshape(-1)       # 토크 −2 ~ +2
+
+class Critic(nn.Module):
+    """n_in = 3 : 상태 가치 V(s) / n_in = 4 : 행동 가치 Q(s, a)(셀 7 의 기준선이 씀)"""
+    def __init__(s, n_in=3): super().__init__(); s.net = mlp(n_in, 1, HID, 2)
+    def forward(s, o, a=None):
+        x = torch.cat([o[:, :2], o[:, 2:3] / 8] + ([a.reshape(-1, 1) / MAX_TORQUE] if a is not None else []), 1)
+        return s.net(x).reshape(-1)
+
+def imagine_train(model, actor, critic, critic_t, start, H, updates, B=B_IMAG, lr_a=LR_ACTOR, lr_c=LR_CRITIC, opt=None):
+    """상상 속 정책 학습 updates 회. start = 상상을 시작할 상태 후보(버퍼의 관측). 실제 환경은 호출하지 않는다"""
+    for p in model.parameters(): p.requires_grad_(False)                         # 월드모델은 이 단계에서 고정
+    oa, oc = opt if opt else (torch.optim.Adam(actor.parameters(), lr_a), torch.optim.Adam(critic.parameters(), lr_c))
+    for _ in range(updates):
+        o = start[torch.randint(0, len(start), (B,))]
+        S, rs = [o], []
+        for h in range(H):                                                       # 상상 rollout : actor → 월드모델 → actor → …
+            o, r = model(o, actor(o)); S.append(o); rs.append(r * R_SCALE)
+        rs, S = torch.stack(rs, 1), torch.stack(S, 1)                            # (B, H) · (B, H+1, 3)
+        v_next = critic_t(S[:, 1:].reshape(-1, 3)).reshape(B, H)                 # 목표 critic 의 V(s_(t+1))
+        ret = lambda_return(rs, v_next)                                          # λ-return = 정책 학습의 정답
+        oa.zero_grad(); (-ret.mean()).backward(); oa.step()                      # actor : λ-return 을 높이도록(모델을 통과한 기울기)
+        v = critic(S[:, :-1].detach().reshape(-1, 3)).reshape(B, H)
+        oc.zero_grad(); F.mse_loss(v, ret.detach()).backward(); oc.step()        # critic : λ-return 을 따라가도록
+        with torch.no_grad():
+            for a_, c_ in zip(critic_t.parameters(), critic.parameters()): a_.mul_(0.98).add_(c_, alpha=0.02)
+    for p in model.parameters(): p.requires_grad_(True)
+    return oa, oc
+
+# 속도 측정 : 갱신 한 번(H=30)에 걸리는 시간 — CPU vs GPU(있으면)
+def ms_per_update(dev, n=20):
+    global DEV
+    old, DEV = DEV, dev
+    try:
+        seed_all(0); b_ = collect(None, 1, 0); m_ = World().to(dev); a_, c_ = Actor().to(dev), Critic().to(dev); ct_ = copy.deepcopy(c_)
+        imagine_train(m_, a_, c_, ct_, b_[0], H_IMAG, 3)
+        if dev == "cuda": torch.cuda.synchronize()
+        t0 = time.perf_counter(); imagine_train(m_, a_, c_, ct_, b_[0], H_IMAG, n)
+        if dev == "cuda": torch.cuda.synchronize()
+        return (time.perf_counter() - t0) / n * 1000
+    finally:
+        DEV = old
+OBS_SCALE = OBS_SCALE.to("cpu")
+print(f"상상 속 갱신 1회(H={H_IMAG}, 시작 상태 {B_IMAG}개) : CPU {ms_per_update('cpu'):.0f} ms", end="")
+if torch.cuda.is_available():
+    OBS_SCALE_cpu = OBS_SCALE; OBS_SCALE = OBS_SCALE.to("cuda")
+    print(f" · GPU {ms_per_update('cuda'):.0f} ms", end=""); OBS_SCALE = OBS_SCALE_cpu
+print()
+''')
+
+b.md('''
+### 셀 6 · 루프 — 실제 수집 → 모델 학습 → 상상 속 정책 학습 → 다시 수집
+
+**왜 이 셀을 도는가** : 처음 모은 데이터로 만든 모델은 정책이 실제로 가는 곳(진자가 위로 올라가는 구간)을 모른다. 그래서 **새 정책으로 실제 수집을 다시 하고 모델을 더 학습**하는 라운드를 반복한다. 이 노트북의 핵심 측정 — **실제 스텝을 얼마나 써야 정책이 풀리는가**.
+
+**한 라운드** : ① 상상 속 정책 학습(셀 5) 200회 ② 그 정책(+ 잡음)으로 실제 진자 1에피소드(200스텝) 수집 ③ 월드모델을 새 데이터를 포함해 200회 더 학습 ④ 정책을 실제 진자에서 평가(10에피소드, 수익). 시작은 무작위 행동 2에피소드(400스텝)로 만든 모델.
+
+**읽는 법** : 가로 = 누적 실제 스텝 수, 세로 = 실제 환경 평가 수익(0 에 가까울수록 좋음, 점선 = 무작위 정책). 첫 점은 학습 전 정책. 곡선이 올라가는 구간이 「실제 스텝 몇 개로 풀렸는가」.
+''')
+b.code('''
+# 셀 6 · Dreamer 축소판 루프
+def cat_buf(a, b): return tuple(torch.cat([x, y]) for x, y in zip(a, b))
+
+def dreamer(seed, init_eps=INIT_EPS, rounds=ROUNDS, H=H_IMAG, policy_updates=POLICY_UPDATES, model_updates=MODEL_UPDATES):
+    seed_all(seed)
+    buf = collect(None, init_eps, seed * 100)
+    model, actor, critic = World(), Actor(), Critic(); critic_t = copy.deepcopy(critic)
+    om = fit_world(model, buf, WM_STEPS); op = None
+    hist = [(len(buf[0]), float(evaluate(actor).mean()))]
+    for rd in range(rounds):
+        op = imagine_train(model, actor, critic, critic_t, buf[0], H, policy_updates, opt=op)                 # ① 상상 속 정책 학습
+        buf = cat_buf(buf, collect(actor, ROUND_EPS, seed * 100 + 1 + rd, noise=EXPLORE_NOISE))              # ② 실제 수집
+        fit_world(model, buf, model_updates, opt=om)                                                          # ③ 월드모델 학습
+        hist.append((len(buf[0]), float(evaluate(actor).mean())))                                             # ④ 실제 평가
+    return hist, (model, actor, buf)
+
+t0 = time.time(); DREAM = {}
+for s in SEEDS:
+    DREAM[s] = dreamer(s)
+    print(f"시드 {s} : " + " → ".join(f"{int(st)}:{ret:.0f}" for st, ret in DREAM[s][0]) + f"   ({time.time() - t0:.0f}초)")
+steps_axis = [st for st, _ in DREAM[SEEDS[0]][0]]
+curve_d = np.array([[ret for _, ret in DREAM[s][0]] for s in SEEDS])
+def first_reach(curve, thr=-300):
+    out = []
+    for c in curve:
+        hit = [steps_axis[i] for i, v in enumerate(c) if v > thr]
+        out.append(hit[0] if hit else None)
+    return out
+reach_d = first_reach(curve_d)
+print("수익 −300 을 처음 넘은 실제 스텝 수(시드별) :", reach_d)
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.errorbar(steps_axis, curve_d.mean(0), curve_d.std(0), marker="o", capsize=3, label="상상 속 학습(Dreamer 축소판)")
+ax.axhline(rand_ret.mean(), color="gray", ls=":", label="무작위 정책"); ax.set_xlabel("누적 실제 스텝 수"); ax.set_ylabel("실제 환경 평가 수익(10에피소드)"); ax.legend(); ax.set_title("실제 스텝 수 대 수익 (시드 3개 평균 ± 표준편차)")
+plt.tight_layout(); plt.show()
+''')
+
+b.md('''
+### 셀 7 · 비교 — 월드모델 없이 실제 데이터로만 학습한 기준선
+
+**왜 이 셀을 도는가** : 상상 속 학습이 정말 실제 스텝을 아끼는지는 **같은 실제 스텝 수에서 모델 없는 방법**과 견줘야 안다. 기준선은 **DDPG 풍** actor-critic : 같은 actor 구조, critic = Q(상태, 행동), 실제 전이로 TD 학습(목표 신경망은 천천히 따라가는 사본), actor 는 Q 를 높이는 쪽으로. 월드모델은 없다.
+
+**공정하게 맞춘 것** : 실제 스텝 수와 수집 일정(처음 무작위 400스텝 + 라운드마다 200스텝 × 6회), 평가 방법(같은 시작 상태 10에피소드), 은닉 크기(64 × 2). **다른 점** : 갱신 횟수 — 상상 쪽은 라운드마다 정책 갱신 200회 + 모델 갱신 200회, 기준선은 두 가지로 돌린다(실제 스텝 1개당 갱신 1회 / 5회). 갱신을 더 줘도 필요한 **실제** 스텝 수가 줄어드는지 본다.
+
+**읽는 법** : 같은 가로축(누적 실제 스텝 수)에서 곡선의 높이를 비교. 두 방법의 연산량은 다르다(상상 쪽은 갱신 한 번마다 모델 속 30스텝 × 64개를 움직임).
+''')
+b.code('''
+# 셀 7 · 모델 없는 기준선(DDPG 풍)
+def ddpg(seed, utd=1, rounds=ROUNDS, B=128):
+    """utd = 실제 스텝 1개당 갱신 횟수. 라운드마다 실제 200스텝을 모은 뒤 200·utd 회 갱신"""
+    seed_all(seed)
+    buf = collect(None, INIT_EPS, seed * 100)
+    actor, q = Actor(), Critic(4); actor_t, q_t = copy.deepcopy(actor), copy.deepcopy(q)
+    oa, oq = torch.optim.Adam(actor.parameters(), LR_ACTOR), torch.optim.Adam(q.parameters(), LR_CRITIC)
+    hist = [(len(buf[0]), float(evaluate(actor).mean()))]
+    for rd in range(rounds):
+        buf = cat_buf(buf, collect(actor, ROUND_EPS, seed * 100 + 1 + rd, noise=EXPLORE_NOISE))
+        for _ in range(200 * ROUND_EPS * utd):
+            ix = torch.randint(0, len(buf[0]), (B,)); o, a, r, o2 = (x[ix] for x in buf)
+            with torch.no_grad(): y = r[:, 0] * R_SCALE + GAMMA * q_t(o2, actor_t(o2))                          # TD 정답 : 실제 보상 + 다음 Q
+            oq.zero_grad(); F.mse_loss(q(o, a[:, 0]), y).backward(); oq.step()
+            oa.zero_grad(); (-q(o, actor(o)).mean()).backward(); oa.step()                                       # actor : Q 를 높이도록
+            with torch.no_grad():
+                for n_, t_ in ((actor, actor_t), (q, q_t)):
+                    for p_, pt in zip(n_.parameters(), t_.parameters()): pt.mul_(0.995).add_(p_, alpha=0.005)
+        hist.append((len(buf[0]), float(evaluate(actor).mean())))
+    return hist
+
+t0 = time.time(); BASE = {}
+for utd in (1, 5):
+    BASE[utd] = {s: ddpg(s, utd) for s in SEEDS}
+    print(f"기준선(실제 스텝 1개당 갱신 {utd}회) {time.time() - t0:.0f}초")
+curve_b = {u: np.array([[ret for _, ret in BASE[u][s]] for s in SEEDS]) for u in BASE}
+fig, ax = plt.subplots(figsize=(8, 4))
+for c, nm, col in ((curve_d, "상상 속 학습(월드모델)", "tab:blue"), (curve_b[1], "기준선 · 스텝당 갱신 1회", "tab:orange"), (curve_b[5], "기준선 · 스텝당 갱신 5회", "tab:green")):
+    ax.errorbar(steps_axis, c.mean(0), c.std(0), marker="o", capsize=3, label=nm, color=col)
+ax.axhline(rand_ret.mean(), color="gray", ls=":", label="무작위 정책"); ax.set_xlabel("누적 실제 스텝 수"); ax.set_ylabel("실제 환경 평가 수익"); ax.legend(); ax.set_title("같은 실제 스텝 수에서의 비교 (시드 3개 평균 ± 표준편차)")
+plt.tight_layout(); plt.show()
+tab7 = pd.DataFrame({"실제 스텝": steps_axis, "상상 속 학습": [ms(curve_d[:, i], 0) for i in range(len(steps_axis))],
+                     "기준선(갱신 1회/스텝)": [ms(curve_b[1][:, i], 0) for i in range(len(steps_axis))], "기준선(갱신 5회/스텝)": [ms(curve_b[5][:, i], 0) for i in range(len(steps_axis))]})
+print("수익 −300 을 처음 넘은 실제 스텝 수(시드별) — 상상 :", reach_d, "· 기준선 1회 :", first_reach(curve_b[1]), "· 기준선 5회 :", first_reach(curve_b[5]))
+tab7
+''')
+
+b.md('''
+### 셀 8 · 모델 오차 악용 — 상상 수익은 높은데 실제 수익은 낮은 간극
+
+**왜 이 셀을 도는가** : actor 는 모델 안에서 점수를 올리도록 학습한다. 모델이 정확하면 그 점수가 곧 실제 점수지만, 데이터가 모자라 **모델이 틀린 곳**이 있으면 actor 는 그 틀린 곳(예: 에너지를 공짜로 얻는 물리법칙 위반)을 찾아내 **상상 속에서만 높은 점수**를 받는다. 이것이 모델 오차 악용이다.
+
+**측정** : 같은 시작 상태(10개)에서 같은 actor 를 (a) **월드모델 안에서 200스텝** 돌린 수익(상상 수익) (b) **실제 진자에서 200스텝** 돌린 수익(실제 수익)을 비교한다. 간극 = 상상 − 실제(양수 = 모델이 더 후하게 점수를 줌). 월드모델은 무작위 행동 데이터로만 학습하고(라운드 없음) 상상 속 정책 학습을 300회씩 3번(총 900회) 이어 가며 매번 측정한다.
+
+| 설정 | 무작위 데이터 | 상상 길이 H |
+|---|---|---|
+| A | 1에피소드(200스텝) — 아주 적음 | 30 |
+| B | 5에피소드(1,000스텝) — 데이터를 늘림 | 30 |
+| C | 1에피소드(200스텝) | 10 — 상상을 짧게 |
+
+마지막 열 「정책이 가는 곳의 모델 오차」는 학습이 끝난 actor 를 실제 진자에서 3에피소드 돌려 그 전이들에서 측정한 모델의 1스텝 θ̇ 오차 — 모델이 정책이 실제로 가는 곳을 얼마나 아는가.
+
+**읽는 법** : 간극(상상 − 실제)의 부호와 크기, 그리고 설정 A → B(데이터 증가), A → C(H 감소)에서 간극이 어떻게 달라지는지를 숫자로 읽는다. 간극이 양수면 모델이 실제보다 후하게 점수를 준 것. 기대와 다른 결과가 나와도 그대로 읽는다.
+''')
+b.code('''
+# 셀 8 · 모델 오차 악용 측정
+@torch.no_grad()
+def imagined_return(model, actor, n=N_EVAL, seed=5000):
+    """같은 시작 상태에서 월드모델 안에서만 200스텝 굴린 수익(모델이 예측한 보상의 합)"""
+    env = Pendulum(n, seed); o = env.reset(); tot = torch.zeros(n, device=DEV)
+    for t in range(EP):
+        o, r = model(o, actor(o)); tot += r
+    return float(tot.mean())
+
+@torch.no_grad()
+def model_err_on_policy(model, actor):
+    O_, A_, R_, O2_ = collect(actor, 3, 4242)
+    p_, _ = model(O_, A_)
+    return float(((p_[:, 2] - O2_[:, 2]) ** 2).mean().sqrt())
+
+CASES = {"A · 데이터 200스텝 · H=30": (1, 30), "B · 데이터 1,000스텝 · H=30": (5, 30), "C · 데이터 200스텝 · H=10": (1, 10)}
+CKPT, N_CK = 300, 3
+def exploit(seed, n_eps, H):
+    seed_all(seed)
+    buf = collect(None, n_eps, seed * 100 + 7)
+    model = World(); fit_world(model, buf, WM_STEPS)
+    actor, critic = Actor(), Critic(); critic_t = copy.deepcopy(critic); op = None; rows = []
+    for k in range(1, N_CK + 1):
+        op = imagine_train(model, actor, critic, critic_t, buf[0], H, CKPT, opt=op)
+        rows.append(dict(갱신=k * CKPT, 상상=imagined_return(model, actor), 실제=float(evaluate(actor).mean())))
+    rows[-1]["정책가는곳_모델오차"] = model_err_on_policy(model, actor)
+    return rows
+print(f"월드모델 갱신 {WM_STEPS}회 · 정책 갱신 {CKPT}회 × {N_CK} · 시드 {SEEDS} · 상상 수익은 모델 안 200스텝, 실제 수익은 같은 시작 상태 10에피소드")
+t0 = time.time(); EXP = {}
+for nm, (ne, H) in CASES.items():
+    EXP[nm] = [exploit(s, ne, H) for s in SEEDS]
+    print(f"{nm} 완료 {time.time() - t0:.0f}초")
+
+rows = []
+for nm, runs in EXP.items():
+    for k in range(N_CK):
+        im, re = [r[k]["상상"] for r in runs], [r[k]["실제"] for r in runs]
+        rows.append({"설정": nm, "정책 갱신": (k + 1) * CKPT, "상상 수익": ms(im, 0), "실제 수익": ms(re, 0), "간극(상상−실제)": ms(np.array(im) - np.array(re), 0),
+                     "정책이 가는 곳의 모델 θ̇ 오차": ms([r[-1]["정책가는곳_모델오차"] for r in runs], 3) if k == N_CK - 1 else ""})
+fig, ax = plt.subplots(1, len(CASES), figsize=(14, 3.6), sharey=True)
+for a, (nm, runs) in zip(ax, EXP.items()):
+    xs = [r["갱신"] for r in runs[0]]
+    for key, col in (("상상", "tab:red"), ("실제", "tab:blue")):
+        m = np.array([[r[key] for r in run] for run in runs]); a.errorbar(xs, m.mean(0), m.std(0), marker="o", capsize=3, color=col, label=f"{key} 수익")
+    a.set_title(nm, fontsize=10); a.set_xlabel("상상 속 정책 갱신 횟수")
+ax[0].set_ylabel("수익"); ax[0].legend()
+plt.tight_layout(); plt.show()
+tab8 = pd.DataFrame(rows); tab8
+''')
+
+b.md('''
+### 셀 9 · 정리 · 확인 질문
+
+**왜 이 셀을 도는가** : 핵심 숫자를 `results/measured_03.json` 에 저장한다(장표에 옮길 숫자는 여기서만 인용).
+''')
+b.code('''
+# 셀 9 · 정리
+measured = dict(
+    설정=dict(장치=DEV, 시드=SEEDS, 감마=GAMMA, 람다=LAM, 보상크기=R_SCALE, 은닉=f"{HID}x2", 상상길이H=H_IMAG, 상상시작상태수=B_IMAG, 학습률_actor=LR_ACTOR, 학습률_critic=LR_CRITIC,
+              처음무작위스텝=INIT_EPS * 200, 라운드당실제스텝=ROUND_EPS * 200, 라운드수=ROUNDS, 라운드당정책갱신=POLICY_UPDATES, 라운드당모델갱신=MODEL_UPDATES,
+              월드모델_초기갱신=WM_STEPS, 수집잡음=EXPLORE_NOISE, 평가에피소드=N_EVAL, 에피소드길이=EP,
+              진자=dict(g=G_, dt=DT, 최대토크=MAX_TORQUE, 보상="-(th^2 + 0.1 thd^2 + 0.001 u^2)")),
+    무작위정책_수익=dict(평균=float(rand_ret.mean()), 표준편차=float(rand_ret.std()), 에피소드수=len(rand_ret)),
+    월드모델_예측오차_시험데이터=dict(데이터스텝=len(buf3[0]), 표=tab3.to_dict()),
+    lambda_return_손계산=dict(R0=R0, R1=R1, R2=R2, R3=R3, 함수값=[float(x) for x in fn]),
+    실제스텝_대_수익=dict(실제스텝=steps_axis, 상상속학습_평균=curve_d.mean(0), 상상속학습_표준편차=curve_d.std(0),
+                    기준선_갱신1_평균=curve_b[1].mean(0), 기준선_갱신1_표준편차=curve_b[1].std(0),
+                    기준선_갱신5_평균=curve_b[5].mean(0), 기준선_갱신5_표준편차=curve_b[5].std(0), 수익300_처음넘은스텝_상상=reach_d,
+                    수익300_처음넘은스텝_기준선1=first_reach(curve_b[1]), 수익300_처음넘은스텝_기준선5=first_reach(curve_b[5])),
+    모델오차악용={nm: [dict(정책갱신=(k + 1) * CKPT, 상상수익_평균=float(np.mean([r[k]["상상"] for r in runs])), 상상수익_표준편차=float(np.std([r[k]["상상"] for r in runs])),
+                       실제수익_평균=float(np.mean([r[k]["실제"] for r in runs])), 실제수익_표준편차=float(np.std([r[k]["실제"] for r in runs])),
+                       간극_평균=float(np.mean([r[k]["상상"] - r[k]["실제"] for r in runs]))) for k in range(N_CK)] +
+                [dict(정책가는곳_모델_theta_dot_RMSE_평균=float(np.mean([r[-1]["정책가는곳_모델오차"] for r in runs])))] for nm, runs in EXP.items()})
+save_measured("03", measured)
+print(tab7.to_string(index=False)); print(); print(tab8.to_string(index=False))
+''')
+
+b.md('''
+**확인 질문**
+1. 월드모델 학습의 정답과 상상 속 정책 학습의 정답은 각각 무엇인가? 정책 학습 쪽 정답에 실제 환경에서 얻은 보상이 직접 들어가지 않는 이유를 셀 5 의 5단계로 설명하라.
+2. 셀 7 의 같은 실제 스텝 수 비교에서 두 방법의 곡선은 어떻게 달랐는가? 그 차이를 「실제 스텝」과 「연산량」 두 가지 기준으로 나눠 말하라.
+3. 셀 8 에서 데이터를 늘리거나 상상 길이 H 를 줄였을 때 상상 수익과 실제 수익의 간극은 어떻게 변했는가? 변하지 않았다면 그 사실과 가능한 이유를 숫자와 함께 말하라.
+''')
+
+b.save()

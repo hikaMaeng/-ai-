@@ -1,0 +1,312 @@
+"""6-2 실습 노트북 05 생성기 (강사용).
+
+    python build_notebook_05.py   → ../notebooks/05_월드모델_평가.ipynb (출력 없이)
+"""
+from nb import Book
+
+b = Book("05_월드모델_평가.ipynb")
+
+b.md('''
+# 실습 05 · 월드모델 평가 — 화면 품질 · 행동 결과 · 장기 오차
+
+**직접 해 보는 것** : 같은 장난감 세계(움직이는 사각형)에서 작은 월드모델 세 개를 학습하고, 「화면이 그럴듯한가」와 「행동에 맞게 움직이는가」가 **별개의 질문**임을 숫자로 확인한다. 이어서 시간에 따라 오차가 쌓이는 모양, 되돌리기 시험이 맞는 경우와 틀리는 경우, 그리고 월드모델을 계획(MPC)에 썼을 때의 현장 성과를 측정한다.
+
+**강의의 어느 개념과 이어지는가**
+- **화면 품질 지표** : PSNR(높을수록 좋음) · FVD(낮을수록 좋음) — 그리고 이것이 행동 정합성과 별개라는 것
+- **반사실 비교** : 같은 초기 조건에서 행동만 바꿔 보기
+- **시간에 따른 오차** : 개루프로 굴릴수록 오차가 쌓이는가
+- **되돌리기 시험** : 가역 과정에만 맞는 기준
+- **현장 성과** : 예측이 좋은 것과 계획이 잘 되는 것은 다르다
+
+**세 모델** (모두 4×4 사각형 환경, 구조는 04 와 같은 작은 CNN)
+- ⓐ **행동 무시** : 행동을 입력으로 받지 않음
+- ⓑ **행동 조건** : 행동 임베딩을 입력 채널에 이어 붙임(concat). 04 에서 FiLM 과 비교했을 때 이 장난감 세계에서는 concat 의 10스텝 오차가 더 작았다
+- ⓒ **행동 조건 + 입력 잡음 증강** : ⓑ 와 같되 학습 때 입력 프레임에 잡음을 섞음(자기 출력을 다시 받는 롤아웃에 견디게 하려는 흔한 처방)
+
+| 셀 | 하는 일 |
+|---|---|
+| 1 | 설정 |
+| 2 | PSNR 을 손으로 계산 = 함수 · FVD 는 설명만 |
+| 3 | 세 모델 학습 |
+| 4 | 1스텝 화면 품질(PSNR · MSE) |
+| 5 | 행동 정합성 — 같은 프레임, 행동만 바꿈 |
+| 6 | 장기 오차 — 개루프 H = 1 · 5 · 10 · 20 |
+| 7 | 되돌리기 시험 — 가역 / 비가역 |
+| 8 | 현장 성과 — 냉각수 밸브 MPC |
+| 9 | 평가표 |
+| 10 | 정리 · 결과 저장 · 확인 질문 |
+
+- 실행 : GPU 있으면 약 5분. GPU 가 없으면 시드 · 스텝을 줄여 돈다. 모든 설정은 출력에 찍는다
+''')
+
+b.md('''
+### 셀 1 · 설정
+''')
+b.code('''
+# 셀 1 · 설정
+import sys, time, json; sys.path.insert(0, ".")
+from wm_vision import *
+CFG = dict(pairs=50000, test_pairs=5000, seeds=(0, 1, 2), steps=1200, lr=2e-3, batch=128, noise_sigma=0.05, cond="concat", valve_seeds=(0, 1, 2))
+if not IS_GPU:      # GPU 가 없으면 줄인다 — 결과 품질이 낮아질 수 있음
+    CFG.update(seeds=(0,), steps=400, valve_seeds=(0,))
+print("장치 :", DEV, "| 설정 :", CFG)
+RES = {"설정": {k: (list(v) if isinstance(v, tuple) else v) for k, v in CFG.items()} | {"장치": str(DEV)}}
+t_all = time.time()
+P = make_pairs(CFG["pairs"], seed=0); TE = make_pairs(CFG["test_pairs"], seed=999)
+D = to_dev(P, ("f0", "f1", "a")); T = to_dev(TE, ("f0", "f1", "a"))
+print(f"학습 쌍 {len(P['a']):,} · 시험 쌍 {len(TE['a']):,} (시드가 다른 별도 자료)")
+''')
+
+b.md('''
+### 셀 2 · PSNR 을 손으로
+- **PSNR(최대 신호 대 잡음비)** = 10·log₁₀( MAX² / MSE ) 데시벨. MAX 는 픽셀 최댓값(여기서는 1.0), MSE 는 예측과 정답의 픽셀당 제곱오차 평균
+- MSE 가 **작을수록** PSNR 이 **커진다** → **높을수록 좋다**. MSE 가 10배 줄면 10 dB 오른다
+- 먼저 2×2 크기의 아주 작은 그림으로 손 계산을 하고, 함수와 같은지 본다
+- **FVD(프레셰 비디오 거리)** 는 여기서 계산하지 않는다. 영상 특징을 뽑는 별도의 큰 모델(I3D 등)이 필요하고, 정답 영상 묶음과 생성 영상 묶음의 특징 분포가 얼마나 다른지를 거리로 낸다. **낮을수록 좋다**. PSNR 은 프레임 하나씩의 픽셀 비교이고, FVD 는 영상 묶음의 분포 비교라는 차이가 있다. 둘 다 「행동에 맞게 움직였는가」를 직접 묻지는 않는다
+''')
+b.code('''
+# 셀 2 · PSNR 손 계산 = 함수
+true = np.array([[0.0, 0.5], [1.0, 0.25]]); pred = np.array([[0.1, 0.5], [0.9, 0.35]])
+diff = pred - true; mse = (diff ** 2).mean()
+print("차이 :", diff.tolist(), "· 제곱의 평균 MSE =", round(float(mse), 5))
+hand = 10 * np.log10(1.0 ** 2 / mse); print("손 계산 PSNR = 10·log10(1/MSE) =", round(float(hand), 3), "dB")
+def psnr(p, y, mx=1.0): return float(10 * torch.log10(mx ** 2 / ((torch.as_tensor(p) - torch.as_tensor(y)) ** 2).mean()))
+print("함수 psnr() =", round(psnr(pred, true), 3), "dB · 일치:", abs(hand - psnr(pred, true)) < 1e-6)
+try:
+    from skimage.metrics import peak_signal_noise_ratio as sk_psnr; print("skimage 와도 비교 :", round(float(sk_psnr(true, pred, data_range=1.0)), 3), "dB")
+except Exception: print("(skimage 가 이 환경에 없어 라이브러리 비교는 생략 — 손 계산과 함수의 일치로 확인)")
+rng = np.random.default_rng(0); img = render(np.array([[12, 12]]), np.array([0]), rng, dots=0)[0]
+for s in (0.01, 0.05, 0.2): print(f"  이 그림에 잡음 σ={s} 를 더하면 PSNR = {psnr(np.clip(img + s * rng.standard_normal(img.shape), 0, 1), img):.1f} dB")
+print("→ 잡음이 클수록(MSE 가 클수록) PSNR 이 낮아진다 = 높을수록 좋다")
+''')
+
+b.md('''
+### 셀 3 · 세 모델 학습
+- **왜** : 같은 구조의 세 모델을 같은 자료로 학습해 평가 방법만 비교한다. 시드 3개씩 → 모델 9개
+- ⓒ 의 잡음 증강 : 학습 때 입력 프레임에만 가우시안 잡음(σ 는 아래 출력)을 더하고 정답은 깨끗한 프레임으로 둔다
+''')
+b.code('''
+# 셀 3 · 세 모델 학습
+SPEC = {"ⓐ 행동 무시": ("none", 0.0), "ⓑ 행동 조건": (CFG["cond"], 0.0), "ⓒ 조건+잡음 증강": (CFG["cond"], CFG["noise_sigma"])}
+MODELS, rows = {}, []
+for name, (cond, nz) in SPEC.items():
+    for sd in CFG["seeds"]:
+        t = time.time(); MODELS[name, sd] = train_dyn(Dyn(cond), D, CFG["steps"], bs=CFG["batch"], lr=CFG["lr"], seed=sd, noise=nz)
+        rows.append((name, cond, nz, sd, round(time.time() - t, 1)))
+print(pd.DataFrame(rows, columns=["모델", "행동 넣는 방식", "입력 잡음 σ", "시드", "학습 초"]).to_string(index=False))
+print(f"설정 : 스텝 {CFG['steps']} · 배치 {CFG['batch']} · 학습률 {CFG['lr']} · 시드 {CFG['seeds']}")
+NAMES = list(SPEC)
+''')
+
+b.md('''
+### 셀 4 · 1스텝 화면 품질
+- **왜** : 월드모델 논문이 흔히 보고하는 「다음 프레임이 정답과 얼마나 비슷한가」를 그대로 측정한다. 진짜 행동을 넣고 한 칸만 예측한다
+- **같이 두는 기준선**
+  - **그대로 복사** : 프레임 t 를 다음 프레임이라고 내놓음. 아무것도 모르는 모델
+  - **점 없는 진짜 다음 프레임** : 깜빡이는 점(예측 불가)만 빼고 완벽하게 맞힌 경우 — 이 세계에서 도달 가능한 근처의 최선
+- **읽는 법** : 사각형은 화면의 1.6%(16/1024)만 차지한다. 행동 무시 모델의 PSNR 을 「복사」 기준선과 견주어 보고, 이 장난감 세계에서는 PSNR 만으로도 행동 조건 모델과 어느 정도 갈리는지를 본다
+''')
+b.code('''
+# 셀 4 · 1스텝 화면 품질
+def psnr_frames(p, y):
+    """프레임마다 PSNR 을 낸 뒤 평균"""
+    return float((10 * torch.log10(1.0 / ((p - y) ** 2).mean((1, 2, 3)).clamp(min=1e-10))).mean())
+@torch.no_grad()
+def pred_all(model, f0, a, bs=1000): return torch.cat([model(fl(f0[i:i + bs]), a[i:i + bs]).clamp(0, 1) for i in range(0, len(f0), bs)])
+y = fl(T["f1"]); rows = []
+for name in NAMES:
+    ps, ms_ = [], []
+    for sd in CFG["seeds"]:
+        p = pred_all(MODELS[name, sd], T["f0"], T["a"]); ps.append(psnr_frames(p, y)); ms_.append(float(((p - y) ** 2).mean()))
+    rows.append((name, ms(ps, 2), ms(ms_, 5)))
+cp_ = fl(T["f0"]); rows.append(("(기준) 그대로 복사", f"{psnr_frames(cp_, y):.2f}", f"{float(((cp_ - y) ** 2).mean()):.5f}"))
+clean = torch.tensor(render(TE["pos1"], TE["col"], np.random.default_rng(1), dots=0), device=DEV)
+rows.append(("(기준) 점 없는 진짜 다음 프레임", f"{psnr_frames(clean, y):.2f}", f"{float(((clean - y) ** 2).mean()):.5f}"))
+R4 = pd.DataFrame(rows, columns=["모델", "PSNR dB (평균±표준편차, 높을수록 좋음)", "픽셀당 MSE (낮을수록 좋음)"]); print(R4.to_string(index=False))
+PSNR = {r[0]: r[1] for r in rows}
+RES["화면품질_1스텝"] = {r[0]: {"PSNR_dB": r[1], "MSE": r[2]} for r in rows}
+''')
+
+b.md('''
+### 셀 5 · 행동 정합성 — 같은 프레임, 행동만 바꿈 (반사실)
+- **왜** : 화면이 비슷하다는 것과 행동에 맞게 움직인다는 것은 다른 질문이다. **같은 초기 프레임에 행동 5개를 각각 넣고**, 예측 프레임에서 사각형 중심을 읽어 진짜 환경의 결과와 비교한다
+- **지표** : 예측 중심이 진짜 다음 중심의 **1픽셀 이내**인 비율(행동별). 사각형이 사라져 위치를 못 읽으면 불일치로 센다. 사각형은 한 번에 2픽셀 움직이므로, 「안 움직였다」고 내놓으면 움직인 행동에서는 불일치(오차 2픽셀)가 된다
+- **읽는 법** : 행동을 무시하는 모델은 「정지」 행동에서만 맞고 나머지는 구분하지 못한다
+''')
+b.code('''
+# 셀 5 · 행동 정합성
+NS = 2000; ct = true_centers_all_actions(TE["pos0"][:NS]); rows, per = [], {}
+for name in NAMES:
+    ms_, sens_ = [], []
+    for sd in CFG["seeds"]:
+        cp = centers_all_actions(MODELS[name, sd], T["f0"][:NS]); ms_.append(center_match(cp, ct)); sens_.append(pair_sensitivity(cp, ct))
+    ms_ = np.array(ms_); per[name] = ms_
+    rows.append([name] + [ms(ms_[:, k], 3) for k in range(5)] + [ms(ms_.mean(1), 3), ms(sens_, 3)])
+R5 = pd.DataFrame(rows, columns=["모델"] + [f"정합률·{a}" for a in ACTIONS] + ["5행동 평균", "행동 민감도(쌍)"]); print(R5.to_string(index=False))
+print("(정합률 = 예측 중심이 진짜 다음 중심의 1픽셀 이내인 비율 · 시험 프레임", NS, "개 × 행동 5개 · 시드 평균±표준편차)")
+RES["행동정합성"] = {n: {"5행동_평균_정합률": float(per[n].mean()), "행동별_정합률": {ACTIONS[k]: float(per[n][:, k].mean()) for k in range(5)}} for n in NAMES}
+''')
+
+b.md('''
+### 셀 6 · 장기 오차 — 개루프 H = 1 · 5 · 10 · 20
+- **왜** : 월드모델은 자기가 낸 프레임을 다시 입력으로 받아 굴린다(개루프). 작은 오차가 스텝마다 쌓이는지 본다. 처음 한 장만 진짜이고, 무작위 행동 20번을 넣는다
+- **지표** : 예측 사각형 중심과 진짜 중심의 거리(픽셀). 사각형을 잃어버린 에피소드는 거리를 못 구하므로 평균에서 빼고, **잃은 비율을 따로** 적는다
+- ⓑ 와 ⓒ 의 차이가 잡음 증강 덕인지는 시드 간 흩어짐과 함께 본다
+- **주의** : 평균 오차는 사각형을 잃지 않은 에피소드만의 값이다. 오차가 작아도 잃은 비율이 크면 「살아남은 것들의 평균」일 뿐이므로 두 숫자를 같이 읽는다
+''')
+b.code('''
+# 셀 6 · 장기 오차
+NE, HZ = 1000, 20
+acts_np = np.random.default_rng(5).integers(0, 5, (NE, HZ)); acts = torch.tensor(acts_np, device=DEV)
+tcen = true_centers_after(TE["pos0"][:NE], acts_np); curves, lostc = {}, {}
+for name in NAMES:
+    es, ls = [], []
+    for sd in CFG["seeds"]:
+        e, l = pos_error(rollout_centers(MODELS[name, sd], T["f0"][:NE], acts), tcen); es.append(e); ls.append(l)
+    curves[name], lostc[name] = np.array(es), np.array(ls)
+HS = (1, 5, 10, 20)
+R6 = pd.DataFrame([[n] + [f"{ms(curves[n][:, h-1], 2)} (잃음 {lostc[n][:, h-1].mean()*100:.1f}%)" for h in HS] for n in NAMES], columns=["모델"] + [f"H={h}" for h in HS])
+print("위치 오차(px) 평균±표준편차(시드 간) · (사각형을 잃은 비율)"); print(R6.to_string(index=False))
+fig, ax = plt.subplots(figsize=(6.8, 3.6))
+for n in NAMES: ax.errorbar(range(1, HZ + 1), np.nanmean(curves[n], 0), yerr=np.nanstd(curves[n], 0), label=n, capsize=1.5)
+ax.set_yscale("log"); ax.set_xlabel("롤아웃 스텝 H"); ax.set_ylabel("위치 오차 px(로그 눈금)"); ax.set_title("개루프 오차 곡선"); ax.legend(); plt.tight_layout(); plt.savefig(RESULTS / "05_horizon.png", dpi=130); plt.show()
+RES["장기오차_위치오차px"] = {n: {f"H={h}": float(np.nanmean(curves[n][:, h-1])) for h in HS} for n in NAMES}
+RES["장기오차_사각형잃은비율"] = {n: {f"H={h}": float(lostc[n][:, h-1].mean()) for h in HS} for n in NAMES}
+''')
+
+b.md('''
+### 셀 7 · 되돌리기 시험 — 「오른쪽 → 왼쪽」 은 원위치로 오는가
+- **시험** : 「오른쪽」을 k번 넣고 「왼쪽」을 k번 넣은 뒤, 사각형이 **출발한 자리로 돌아오는가**(1픽셀 이내)
+- **두 상황**
+  - **가역** : 벽에서 먼 곳. 오른쪽 k칸 가고 왼쪽 k칸 오면 정확히 제자리
+  - **비가역** : 오른쪽 벽에 붙은 곳. 「오른쪽」은 벽에 막혀 제자리(정보가 사라짐)이고, 「왼쪽」은 정상적으로 움직여서 **원위치로 안 돌아온다**
+- **읽는 법** : 비가역 상황에서 「돌아오지 않음」은 **정답**이다. 진짜 환경도 그렇기 때문이다. 이 시험은 가역 과정에만 맞는 기준이므로, 벽 근처에서 모델이 안 돌아온다고 불합격 처리하면 안 된다. 비가역 상황에서는 대신 「**진짜 환경과 같은 최종 위치인가**」를 본다
+''')
+b.code('''
+# 셀 7 · 되돌리기 시험
+def return_test(model, pos0, k):
+    n = len(pos0); col = np.random.default_rng(3).integers(0, len(COLORS), n)
+    f0 = torch.tensor(to_u8(render(pos0, col, np.random.default_rng(4))), device=DEV)
+    a_np = np.array([[4] * k + [3] * k] * n); cp = rollout_centers(model, f0, torch.tensor(a_np, device=DEV))[:, -1]
+    true_end = true_centers_after(pos0, a_np)[:, -1]; start = true_center(pos0)
+    return (cp - start).norm(dim=1), (cp - true_end).norm(dim=1), (true_end - start).norm(dim=1)
+rg = np.random.default_rng(11); N7 = 300
+grid = lambda: rg.integers(4, 11, N7) * STEP                          # 8 ~ 20 (벽에서 먼 곳)
+POS = {"가역(벽에서 먼 곳)": np.stack([grid(), grid()], 1), "비가역(오른쪽 벽에 붙음)": np.stack([np.full(N7, MAXP), grid()], 1)}
+rows, R7 = [], {}
+for gname, pos0 in POS.items():
+    for k in (1, 3):
+        _, _, tr_err = return_test(MODELS[NAMES[1], CFG["seeds"][0]], pos0, k)
+        row = [gname, k, f"{float((tr_err <= 1).float().mean())*100:.0f}% (오차 {float(tr_err.mean()):.1f}px)"]
+        for name in NAMES:
+            r_, f_ = [], []
+            for sd in CFG["seeds"]:
+                back, fin, _ = return_test(MODELS[name, sd], pos0, k); r_.append(float((back <= 1).float().mean())); f_.append(float((fin <= 1).float().mean()))
+            row += [ms(r_, 2), ms(f_, 2)]; R7[gname, k, name] = (float(np.mean(r_)), float(np.mean(f_)))
+        rows.append(row)
+hdr = ["상황", "k(왕복 칸 수)", "진짜 환경: 원위치로 돌아온 비율"]
+for n in NAMES: hdr += [f"{n[:1]} 원위치", f"{n[:1]} 진짜 환경과 같은 끝점"]
+print(pd.DataFrame(rows, columns=hdr).to_string(index=False))
+print("(원위치 = 출발 중심과 1픽셀 이내 · 같은 끝점 = 진짜 환경이 낸 최종 중심과 1픽셀 이내 · 시드 평균±표준편차, 시작 위치", N7, "개)")
+RES["되돌리기"] = {f"{g}|k={k}|{n}": {"원위치_비율": v[0], "진짜환경과_같은_끝점_비율": v[1]} for (g, k, n), v in R7.items()}
+''')
+
+b.md('''
+### 셀 8 · 현장 성과 — 냉각수 밸브를 월드모델로 계획하기
+- **시뮬레이터(직접 구현)** : 온도 T · 밸브 개도 u(0~100%) · 열부하 L(센서로 보이는 값, 가끔 바뀜). **행동 = 개도 변화 −10 ~ +10%**, 그 효과는 **2스텝 뒤**에 개도에 반영된다. T 는 평형온도 `60 + 40·L − 0.4·u` 쪽으로 20% 씩 다가가며, 관측에는 작은 잡음(0.3℃)이 섞인다. **목표 70℃**, 비용 (T−70)², 상한 80℃
+- **월드모델** : 작은 MLP(은닉 64 두 층)가 (T, u, 대기 중인 행동 2개, L, 행동) → 다음 (T, u) 를 예측한다. 무작위 행동으로 만든 전이 2만 개로 학습
+- **계획(MPC)** : 매 스텝, 무작위 행동열 256개(길이 8)를 월드모델 안에서 굴려 (T−70)² 합이 가장 작은 열의 **첫 행동만** 실행하고 다음 스텝에 다시 계획한다(손으로 구현한 무작위 표본 최고 방식)
+- **비교하는 월드모델**
+  - 충분히 학습(3000스텝)
+  - **덜 학습**(30스텝)
+  - **지연을 모르는 모델** : 대기 중인 행동을 입력으로 못 봄(3000스텝으로 충분히 학습). 이 모델은 직접 추가한 대조군이다 — 한 스텝 예측 오차는 작아 보이는데 계획은 어떻게 되는가
+  - (기준) 진짜 방정식을 아는 **오라클 월드모델**, **아무것도 안 하는 정책**
+- **측정** : 20개 환경 × 100스텝. 진짜 온도 기준 평균 비용 · 상한(80℃) 넘은 스텝 수 · 목표와의 평균 절대 오차 · 결정 1회 계산 시간. 모델 시드 3개
+- **정직하게** : 화면 PSNR 이 그랬듯, 한 스텝 예측 오차의 순위와 계획 성과의 순위가 같을지 미리 정하지 않는다
+''')
+b.code('''
+# 셀 8 · 냉각수 밸브 MPC
+tr_v, te_v = valve_dataset(200, 0), valve_dataset(50, 77)
+with torch.no_grad(): T2_, u2_ = oracle_model(*[te_v[:, i] for i in range(6)])
+floor = float(((T2_ - te_v[:, 6]) ** 2).mean().sqrt())
+print(f"전이 자료 {tuple(tr_v.shape)} · 시험 {tuple(te_v.shape)} · 관측 잡음 때문에 진짜 방정식도 1스텝 RMSE {floor:.3f}℃ 아래로는 못 내려감(바닥)")
+VARI = {"충분히 학습": (True, 3000), "덜 학습(30스텝)": (True, 30), "지연을 모르는 모델": (False, 3000)}
+rows, KEEP = [], {}
+for name, (dl, st) in VARI.items():
+    for sd in CFG["valve_seeds"]:
+        m = train_valve(tr_v, dl, st, seed=sd); rT, rU = valve_rmse(m, te_v); KEEP[name, sd] = m
+        g = torch.Generator().manual_seed(100 + sd); r = run_valve(lambda o: mpc_action(m, o, gen=g))
+        rows.append((name, sd, rT, rU, r["cost"], r["viol"], r["mae"]))
+Rv = pd.DataFrame(rows, columns=["월드모델", "시드", "1스텝 T 오차 RMSE(℃)", "1스텝 개도 RMSE(%)", "평균 비용", "상한 위반 스텝 수", "목표와 평균 절대오차(℃)"])
+g0 = torch.Generator().manual_seed(100)
+base = [("아무것도 안 함", run_valve(lambda o: np.zeros(len(o["T"])))), ("오라클 월드모델 MPC", run_valve(lambda o: mpc_action(oracle_model, o, gen=g0)))]
+tab = [[n, ms(g["1스텝 T 오차 RMSE(℃)"], 3), ms(g["1스텝 개도 RMSE(%)"], 2), ms(g["평균 비용"], 1), ms(g["상한 위반 스텝 수"], 1), ms(g["목표와 평균 절대오차(℃)"], 2)] for n, g in Rv.groupby("월드모델", sort=False)]
+tab += [[n, f"({floor:.3f})" if "오라클" in n else "-", "-", f"{r['cost']:.1f}", f"{r['viol']:.1f}", f"{r['mae']:.2f}"] for n, r in base]
+V8 = pd.DataFrame(tab, columns=["정책 / 월드모델", "1스텝 T 오차 RMSE(℃)", "1스텝 개도 RMSE(%)", "평균 비용 (T−70)²", "상한 위반 스텝 수(100스텝당)", "목표와 평균 절대오차(℃)"]); print(V8.to_string(index=False))
+gm = Rv.groupby("월드모델", sort=False).mean(numeric_only=True)
+print("1스텝 T 오차 작은 순 :", list(gm["1스텝 T 오차 RMSE(℃)"].sort_values().index))
+print("계획 비용 작은 순    :", list(gm["평균 비용"].sort_values().index))
+m = KEEP["충분히 학습", CFG["valve_seeds"][0]]; o1 = Valve(1, 1).obs(); t = time.time()
+for _ in range(50): mpc_action(m, o1)
+ms_dec = (time.time() - t) / 50 * 1000
+print(f"결정 1회 계산 시간(후보 256 × 길이 8, 환경 1개, CPU) : {ms_dec:.1f} ms · 설정: 환경 20개 × 100스텝 · 환경 시드 123 · 모델 시드 {CFG['valve_seeds']}")
+RES["현장성과_밸브"] = {n: {"1스텝_T_RMSE_℃": float(g["1스텝 T 오차 RMSE(℃)"].mean()), "평균비용": float(g["평균 비용"].mean()), "상한위반_스텝수": float(g["상한 위반 스텝 수"].mean())} for n, g in Rv.groupby("월드모델", sort=False)}
+RES["현장성과_밸브"] |= {n: {"평균비용": r["cost"], "상한위반_스텝수": r["viol"]} for n, r in base} | {"결정1회_ms": ms_dec, "관측잡음_바닥_RMSE_℃": floor}
+''')
+
+b.md('''
+### 셀 9 · 평가표 — 무엇을 넣고 · 무엇이 변해야 하고 · 어떤 지표로 · 언제 실패인가
+- 위 측정을 월드모델 평가표로 정리한다. 「실패 판정」 기준은 **이 수업에서 예시로 정한 값**이다 — 현장에서는 목적에 맞게 새로 정해야 한다
+- 값은 앞 셀의 측정 결과를 그대로 가져온다
+''')
+b.code('''
+# 셀 9 · 평가표
+fmt = lambda v, ok: f"{v} ({'통과' if ok else '실패'})"
+acc = {n: float(per[n].mean()) for n in NAMES}
+h20 = {n: float(np.nanmean(curves[n][:, HZ - 1])) for n in NAMES}
+rev = {n: R7["가역(벽에서 먼 곳)", 3, n][0] for n in NAMES}
+wall = {n: R7["비가역(오른쪽 벽에 붙음)", 3, n][1] for n in NAMES}
+rows = [
+    ("화면 품질", "정답 프레임과 예측 프레임", "프레임이 정답과 비슷", "PSNR(높을수록 좋음)", "단독 기준 없음 — 행동 정합성과 함께 봐야 함", {n: PSNR[n] + " dB" for n in NAMES}),
+    ("반사실 행동 정합성", "같은 프레임, 행동 5개", "사각형이 행동 방향으로 2픽셀 이동", "예측 중심이 진짜와 1픽셀 이내인 비율", "5행동 평균 < 0.9", {n: fmt(f"{acc[n]:.2f}", acc[n] >= 0.9) for n in NAMES}),
+    ("장기 오차", "무작위 행동 20번 개루프", "위치 오차가 쌓이지 않음", "H=20 위치 오차(px)", "> 2픽셀", {n: (fmt(f"{h20[n]:.2f}px", h20[n] <= 2) if not np.isnan(h20[n]) else "사각형 상실 (실패)") for n in NAMES}),
+    ("되돌리기(가역)", "벽에서 먼 곳, 오른쪽 3 → 왼쪽 3", "출발한 자리로 돌아옴", "원위치 비율", "< 0.9", {n: fmt(f"{rev[n]:.2f}", rev[n] >= 0.9) for n in NAMES}),
+    ("되돌리기(비가역)", "오른쪽 벽에서 오른쪽 3 → 왼쪽 3", "돌아오지 않는 것이 정답 → 진짜 환경과 같은 끝점인가", "진짜 환경과 같은 끝점 비율", "< 0.9 (원위치 여부는 판정에 쓰지 않음)", {n: fmt(f"{wall[n]:.2f}", wall[n] >= 0.9) for n in NAMES}),
+]
+R9 = pd.DataFrame([r[:5] + tuple(r[5][n] for n in NAMES) for r in rows], columns=["시험", "입력", "기대 변화", "지표", "실패 판정(예시)"] + NAMES)
+pd.set_option("display.max_colwidth", 60, "display.width", 250); print(R9.to_string(index=False))
+print("\\n현장 성과(밸브 MPC) 행은 셀 8 의 표 — 판정 기준 예시 : 평균 비용이 오라클 MPC 의 2배를 넘거나 상한 위반이 오라클보다 10스텝 이상 많으면 실패")
+orc = base[1][1]
+fail = {n: (g["평균 비용"].mean() > 2 * orc["cost"]) or (g["상한 위반 스텝 수"].mean() > orc["viol"] + 10) for n, g in Rv.groupby("월드모델", sort=False)}
+print({n: ("실패" if f else "통과") for n, f in fail.items()})
+RES["평가표"] = R9.astype(str).to_dict("records")
+''')
+
+b.md('''
+### 셀 10 · 결과 저장
+''')
+b.code('''
+# 셀 10 · 결과 저장
+RES["총_실행_초"] = round(time.time() - t_all, 1)
+(RESULTS / "measured_05.json").write_text(json.dumps(RES, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+print("저장 :", RESULTS / "measured_05.json", "· 전체 실행", RES["총_실행_초"], "초")
+''')
+
+b.md('''
+## 정리
+
+| 본 것 | 실험에서 확인한 방법 |
+|---|---|
+| PSNR 은 높을수록 좋은 픽셀 비교 | 셀 2 : 손 계산 = 함수, 잡음이 커지면 낮아짐 |
+| 화면 품질은 행동 정합성과 별개 | 셀 4 와 셀 5 를 나란히 : 복사 기준선 · 행동 무시 모델의 PSNR 과 정합률 |
+| 시간에 따라 오차가 쌓인다 | 셀 6 : H = 1 · 5 · 10 · 20 곡선과 잃은 비율 |
+| 되돌리기는 가역 과정에만 맞는 기준 | 셀 7 : 벽에서 먼 곳 / 벽에 붙은 곳을 진짜 환경과 모델 양쪽에서 |
+| 예측이 좋다 ≠ 계획이 좋다 | 셀 8 : 1스텝 오차 순위와 MPC 성과 순위를 나란히 |
+
+### 확인 질문
+1. 셀 4 에서 행동 무시 모델의 PSNR 이 「프레임 그대로 복사」 기준선과 거의 같은 이유는 무엇인가? 사각형이 화면의 1.6% 뿐이라는 점과 연결해 설명하고, PSNR 만으로 월드모델을 선택하면 어떤 위험이 있는지 말해 보자.
+2. 벽에 붙은 곳에서 「오른쪽 → 왼쪽」이 원위치로 돌아오지 않는데도 모델이 옳다고 판정되는 이유는 무엇인가? 실제 현장의 어떤 공정에서 이 시험을 쓰면 안 되는가?
+3. 셀 8 에서 한 스텝 예측 오차가 비슷해 보이는 모델 둘의 계획 성과가 크게 달랐다면(또는 달랐는지), 월드모델을 현장 투입 전에 어떤 시험으로 걸러야 하는가?
+''')
+
+b.save()
