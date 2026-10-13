@@ -9,19 +9,19 @@ b = Book("06_TTS_목소리_만들기.ipynb")
 b.md('''
 # 실습 06 · TTS — 코덱 LM 으로 목소리 복제, flow matching 으로 소리 만들기, 그리고 측정하는 법
 
-장표 「코덱 토큰 TTS」 · 「2026 코덱 LM」 · 「하이브리드」 · 「참고 음성」 · 「TTS 를 측정하는 법」을 확인한다.
+현재 강의와의 연결은 아래 셀별 표에 표시. 구조 확인·직접 측정·문헌 설명의 구분.
 
 | 셀 | 하는 일 | 장표 |
 |---|---|---|
 | 1 | 설정 — 읽힐 문장 · 참고 화자 | – |
-| 2 | Qwen3-TTS 부품 — LM · 코드 예측기(MTP) · 12Hz 토크나이저 | 2026 코덱 LM |
-| 3 | 목소리 복제 — 참고 음성 몇 초 + 글 → 새 소리 | 코덱 토큰 TTS · 참고 음성 |
-| 4 | 받아쓰기로 측정 — 재전사 CER · 틀린 곳 | TTS 를 측정하는 법 |
-| 5 | 화자 유사도 — 같은 사람처럼 들리나(WavLM 화자 벡터) | TTS 를 측정하는 법 · 참고 음성 |
-| 6 | 참고 음성 길이 — 1초 · 3초 · 전체 | 참고 음성 |
-| 7 | 하이브리드 — Qwen2.5-Omni 의 Talker 토큰 → DiT flow matching → 소리, 스텝 수 · CFG | 하이브리드 · Flow Matching TTS |
-| 8 | 워터마크 — 사람 귀에 안 들리는 표시를 넣고 찾기 | 음성 모달 한계 4번 |
-| 9 | 내 목소리로 — 녹음 파일을 넣으면 | 참고 음성 |
+| 2 | Qwen3-TTS 부품 — LM · 코드 예측기(MTP) · 12Hz 토크나이저 | 2026 방식 — 걸음을 줄이고 프레임 안에서 분업 |
+| 3 | 목소리 복제 — 참고 음성 몇 초 + 글 → 새 소리 | 코덱 토큰 TTS — 소리를 이어 쓰는 LLM · 참고 음성 — 목소리는 어떻게 복제되나 |
+| 4 | 받아쓰기로 측정 — 재전사 CER · 틀린 곳 | TTS를 측정하는 법 — 내용 · 목소리 · 귀 |
+| 5 | 화자 유사도 — 같은 사람처럼 들리나(WavLM 화자 벡터) | 오디오 LLM 텐서 흐름 — 소리가 들어가는 자리 · TTS를 측정하는 법 — 내용 · 목소리 · 귀 |
+| 6 | 참고 음성 길이 — 1초 · 3초 · 전체 | 참고 음성 — 목소리는 어떻게 복제되나 · TTS를 측정하는 법 — 내용 · 목소리 · 귀 |
+| 7 | 하이브리드 — Qwen2.5-Omni 의 Talker 토큰 → DiT flow matching → 소리, 시각 점 수 · CFG | 다른 길 — 번호 없이 만드는 Flow Matching · 하이브리드 — 뼈대는 LM이, 소리 결은 flow가 |
+| 8 | 워터마크 — 사람 귀에 안 들리는 표시를 넣고 찾기 | 음성 모달 한계 |
+| 9 | 내 목소리로 — 녹음 파일을 넣으면 | 참고 음성 — 목소리는 어떻게 복제되나 |
 
 - 실행 : GPU 필수(VRAM 12GB 이상, 셀 7). Qwen3-TTS 1.7B · Qwen3-ASR · WavLM 화자 모델 · Qwen2.5-Omni-3B · AudioSeal
 - **목소리 복제는 본인 또는 동의한 사람의 목소리로만.** 기본 예시는 공개 데이터(FLEURS, CC BY 4.0) 화자
@@ -42,7 +42,7 @@ TERMS = "반응기, 출구 온도, 설정값, 냉각수 밸브 개도, 질소 �
 b.md('''
 ### 셀 2 · Qwen3-TTS 부품
 - **토크나이저(12Hz)** : 소리 ↔ 정수. 초당 12.5 프레임 × 코드북 16개(05 의 Mimi 와 같은 계열)
-- **LM(talker)** : 글 + 참고 음성 코드를 보고 프레임마다 **0번 코드북**을 다음 토큰처럼 예측(2강 디코딩)
+- **LM(talker)** : 글 + 참고 음성 코드를 보고 프레임마다 **0번 코드북**을 다음 토큰처럼 예측(앞서 배운 디코딩)
 - **코드 예측기(MTP, multi-token prediction)** : 그 프레임의 나머지 15개 코드북을 작은 모델이 채움 → VALL-E 의 「AR 1개 + NAR 나머지」 분업의 2026년 판
 ''')
 b.code('''
@@ -119,7 +119,7 @@ del asr; gpu_free()
 
 b.md('''
 ### 셀 5 · 화자 유사도
-- WavLM 화자 검증 모델 : 소리 → 화자 벡터(512차원). 두 벡터의 코사인이 1 에 가까울수록 같은 사람처럼 들림(3강 코사인)
+- WavLM 화자 검증 모델 : 소리 → 화자 벡터(512차원). 두 벡터의 코사인이 1 에 가까울수록 이 모델의 화자 표현이 가까움(앞서 배운 코사인)
 - 비교 기준 : 복제 ↔ 자기 참고 음성 / 복제 ↔ 다른 화자 / FLEURS 같은 성별끼리 · 다른 성별끼리
 ''')
 b.code('''
@@ -142,10 +142,23 @@ E = [emb(wav_of(df, i)) for i in range(20)]; g = df["gender"].iloc[:20].tolist()
 same = [float(E[i] @ E[j]) for i in range(20) for j in range(i + 1, 20) if g[i] == g[j]]
 diff = [float(E[i] @ E[j]) for i in range(20) for j in range(i + 1, 20) if g[i] != g[j]]
 print(f"기준 — FLEURS 20문장 : 같은 성별끼리 {np.mean(same):.3f} · 다른 성별끼리 {np.mean(diff):.3f}")
+# 성별 라벨은 화자 ID가 아님. 동일인 정답 대신 각 녹음 쌍과 유사도를 공개
+pair_rows = [(i, j, g[i], g[j], float(E[i] @ E[j])) for i in range(20) for j in range(i + 1, 20)]
+pair_table = pd.DataFrame(pair_rows, columns=["녹음 A", "녹음 B", "성별 A", "성별 B", "코사인"])
+pair_table.to_csv(RESULTS / "06_speaker_pairs.csv", index=False)
+male = df.index[df["gender"] == "남"].tolist(); female = df.index[df["gender"] == "여"].tolist()
+checks = [(male[k], female[k]) for k in range(6)]
+print("오디오 LLM 실험과 같은 남·여 6쌍 — 기준 0.8은 설명용이며 검증된 동일인 임계값이 아님")
+for i, j in checks:
+    score = float(emb(wav_of(df, i)) @ emb(wav_of(df, j)))
+    print(f"녹음 {i} ↔ {j}: 코사인 {score:.3f} · 0.8 미만 {score < 0.8}")
+print("같은 성별의 높은 유사도만으로 동일인을 판정할 수 없음: 이 데이터에는 화자 ID 대조가 없음")
+
 ''')
 
 b.md('''
 ### 셀 6 · 참고 음성 길이
+- 한 화자·한 문장의 비교. 3초가 모든 화자에게 충분하다는 결론은 낼 수 없음
 - 참고 음성을 1초 · 3초 · 전체로 잘라 같은 글을 복제 → 화자 유사도 · CER
 - 짧을수록 목소리 정보가 적다. 「3초 복제」(VALL-E · Qwen3-TTS 의 홍보 문구)가 어느 정도인지 직접
 ''')
@@ -168,10 +181,10 @@ del sv; gpu_free()          # 셀 7 의 Omni(약 12GB)를 올릴 자리 확보 �
 b.md('''
 ### 셀 7 · 하이브리드 — 토큰 → flow matching → 소리
 - Qwen2.5-Omni 의 음성 출력부 : **Talker(LM)** 가 음성 토큰을 내고 → **Token2Wav** 의 DiT 가 그 토큰을 조건으로 노이즈에서 멜을 만들고(flow matching) → 보코더가 파형
-- 5-2 회수 : 스텝 수(적분을 몇 번 나눠 하나) · CFG(조건 있는 예측과 없는 예측의 차이를 키움) · sway(초반 스텝에 촘촘히)
-- 이 구현의 num_steps = 0~1 사이 시각 점의 개수. 점 사이를 RK4(구간마다 DiT 를 4번 부르는 적분)로 건넘 → DiT 호출 = 4 × (점 − 1), CFG 를 켜면 × 2. 점 1개면 적분을 안 함 = 노이즈 그대로
-- CFG 식 : 조건 예측 + (조건 예측 − 조건 없는 예측) × g → 5-2 의 w 로 쓰면 w = 1 + g(기본 g 0.5 = w 1.5)
-- 같은 Talker 토큰으로 스텝 수 · CFG 만 바꿔 다시 만들고 Whisper 로 받아 적어 WER(Thinker 가 낸 글 기준) · 시간. 이 모델의 음성 출력은 영어 · 중국어만 → 영어 문장
+- 이미지 생성과 같은 적분: 시각 점 수(적분 구간의 양 끝을 포함한 점 수) · CFG(조건 있는 예측과 없는 예측의 차이를 키움) · sway(초반 스텝에 촘촘히)
+- 이 구현의 num_steps = 0~1 사이 시각 점의 개수. RK4(Runge–Kutta 4차 적분)는 구간마다 DiT를 4회 호출. CFG(Classifier-Free Guidance, 조건 유도)는 조건·무조건 예측을 배치 2개로 묶음 → 호출 4 × (점 − 1)회, 예측 개수는 그 2배. 점 1개는 적분 구간 0개
+- CFG 식 : 조건 예측 + (조건 예측 − 조건 없는 예측) × g → 이미지 생성에서 쓴 w 로 쓰면 w = 1 + g(기본 g 0.5 = w 1.5)
+- 같은 Talker 토큰으로 시각 점 수 · CFG 만 바꿔 다시 만들고 Whisper 로 받아 적어 WER(Thinker 가 낸 글 기준) · 시간. 이 모델의 음성 출력은 영어 · 중국어만 → 영어 문장
 ''')
 b.code('''
 # 셀 7 · 하이브리드
@@ -201,11 +214,12 @@ for steps, gs in [(1, 0.5), (2, 0.5), (3, 0.5), (4, 0.5), (10, 0.5), (32, 0.5), 
     torch.cuda.synchronize(); dt = time.time() - t0
     y = w.reshape(-1).float().cpu().numpy(); souts[(steps, gs)] = y
     h = asr(librosa.resample(y, orig_sr=24000, target_sr=SR), generate_kwargs={"language": "english"})["text"]
-    nfe = 4 * (steps - 1) * (2 if gs >= 1e-5 else 1)
-    rows.append((steps, gs, nfe, round(dt * 1000), round(wer(h, SPOKEN), 3), h))
-R7 = pd.DataFrame(rows, columns=["시각 점", "CFG", "DiT 호출 수", "Token2Wav 시간(ms)", "WER", "받아쓰기"])
+    calls = 4 * (steps - 1)
+    predictions = calls * (2 if gs >= 1e-5 else 1)
+    rows.append((steps, steps - 1, gs, calls, predictions, round(dt * 1000), round(wer(h, SPOKEN), 3), h))
+R7 = pd.DataFrame(rows, columns=["시각 점", "적분 구간", "CFG", "DiT 호출 수(소스 계산)", "조건·무조건 예측 개수", "Token2Wav 시간(ms)", "WER", "받아쓰기"])
 print(R7.to_string(index=False)); R7.to_csv(RESULTS / "06_token2wav_steps.csv", index=False)
-for k in [(1, 0.5), (2, 0.5), (10, 0.5), (10, 1e-4)]: play(souts[k], 24000, label=f"스텝 {k[0]} · CFG {k[1]}")
+for k in [(1, 0.5), (2, 0.5), (10, 0.5), (10, 1e-4)]: play(souts[k], 24000, label=f"시각 점 {k[0]} · CFG {k[1]}")
 del om, asr; gpu_free()
 ''')
 
