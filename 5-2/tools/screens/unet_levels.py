@@ -1,8 +1,8 @@
 # U-Net 구조 도해용 그림 4장 — 실제 생성 그림(SD1.5, 시드 42) 위에 해상도별 칸 격자 + 3×3 합성곱 창이 덮는 범위
 #   64×64 · 32×32 는 창이 작아 오른쪽 위에 확대창(창 주변 3배 영역)을 함께 그림
-#   docker run --rm -v "<5-2>:/r" ai4-lab/jupyter-clip python /r/tools/screens/unet_levels.py
+#   저장소 루트에서 : docker compose exec jupyter python /work/5-2/tools/screens/unet_levels.py   (Git Bash 는 앞에 MSYS_NO_PATHCONV=1)
 from PIL import Image, ImageDraw
-SRC = '/r/outputs/comfy/5-2/05/sd15_00001_.png'      # 512×512, "a red car on the beach"
+SRC = '/work/5-2/outputs/comfy/5-2/05/sd15_00001_.png'      # 512×512, "a red car on the beach"
 S = 660                                               # 출력 한 변(슬라이드에서 165px 로 줄여 씀)
 ORG = (242, 107, 58)
 base = Image.open(SRC).convert('RGB').resize((S, S), Image.LANCZOS)
@@ -41,5 +41,5 @@ for n in (64, 32, 16, 8):
         frame.line([(x0 + 3 * c, y0), (PX, PY + Z)], fill=(255, 255, 255, 230), width=3)
         frame.rectangle([PX - 4, PY - 4, PX + Z + 4, PY + Z + 4], fill=(255, 255, 255, 255))
         im.paste(crop, (PX, PY))
-    im.convert('RGB').save(f'/r/screens/slide/U_level_{n}.png', optimize=True)
+    im.convert('RGB').save(f'/work/5-2/screens/slide/U_level_{n}.png', optimize=True)
     print(n, 'cell', 512 // n, 'px window', 3 * 512 // n, 'px')

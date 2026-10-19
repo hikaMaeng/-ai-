@@ -1,6 +1,6 @@
 # CFG w 별 CLIP 일치도 — 「0.20 · 0.34 가 무슨 뜻인가」의 잣대
 #   그림 ↔ 자기 프롬프트 코사인과 그림 ↔ 무관한 프롬프트(나머지 5개) 코사인을 함께 잰다
-#   docker exec ai4-gen python /work/5-2/tools/experiments/cfg_scale.py
+#   저장소 루트에서 : docker compose exec jupyter python /work/5-2/tools/experiments/cfg_scale.py   (Git Bash 는 앞에 MSYS_NO_PATHCONV=1)
 import torch, numpy as np, torch.nn.functional as F
 from diffusers import StableDiffusionPipeline, DDIMScheduler
 from transformers import CLIPModel, CLIPProcessor

@@ -1,8 +1,8 @@
 # 5-2 실습 — 이미지 생성 : 디퓨전을 부품으로 열어 보고, ComfyUI 로 최신 모델을 부리기
 
 > 현대 AI의 원리와 구조 #5-2 이미지 생성 실습 · 뉴런데브클래스
-> 전제 : **NVIDIA GPU**(VRAM 16GB 이상 권장, 4~8GB 면 01~04 만) + 도커가 GPU 를 넘길 수 있는 PC. 5-1 의 GPU 이미지(`ai4-lab/jupyter-clip:gpu`)를 한 번 빌드했다
-> 실습 화면 : Jupyter **http://localhost:8891** → `5-2/notebooks/`. ComfyUI 화면 **http://localhost:8188** 은 노트북이 저장한 워크플로를 열어 보거나 직접 돌려 볼 때만
+> 전제 : **NVIDIA GPU**(VRAM 16GB 이상 권장, 4~8GB 면 01~04 만) + 도커가 GPU 를 넘길 수 있는 PC. 환경은 저장소 루트의 `docker-compose.yml` 하나([루트 README](../README.md)) — Jupyter 커널 「Python 3 (기본)」
+> 실습 화면 : Jupyter **http://localhost:8888** → `5-2/notebooks/`. ComfyUI(선택 서비스 `--profile comfy`) 화면 **http://localhost:8188** 은 노트북이 저장한 워크플로를 열어 보거나 직접 돌려 볼 때만
 > 모델 : `../4-1/comfyui/models` 에 둔다(약 77GB) → `bash tools/download_models.sh`
 
 | 노트북 | 하는 일 | 엔진 | 장표 | 시간(실측) |
@@ -18,9 +18,7 @@
 
 ```
 5-2/
-├─ docker-compose.yml        comfy(ComfyUI, 8188) + lab(Jupyter, 8891) — 같은 도커 네트워크, 노트북 → http://comfy:8188
-├─ lab/Dockerfile            ai4-lab/jupyter-clip:gpu + diffusers · accelerate · requests · gguf
-├─ comfy/userscripts/        ComfyUI 기동 때 실행 : GGUF 노드의 파이썬 패키지 설치
+├─ comfy/userscripts/        ComfyUI 기동 때 실행 : GGUF 노드의 파이썬 패키지 설치 (루트 compose 의 comfy 서비스가 마운트)
 ├─ notebooks/                01~05. 코드 셀 첫 줄 = "# 셀 N · 제목", 설정은 셀 1
 ├─ workflows/                05 셀 3 이 저장 : *_t2i.json(화면 형식) · *_t2i_api.json(API 형식) → ComfyUI 워크플로 목록 「5-2」
 ├─ outputs/                  ComfyUI 결과 · 실험 산출물 (.gitignore)
@@ -38,23 +36,26 @@
 | 항목 | 값 |
 |---|---|
 | GPU | NVIDIA, VRAM 16GB 이상 권장. 05 의 Qwen-Image(4비트 13GB + 조건 인코더 5.4GB)를 ComfyUI 가 번갈아 올림 |
-| 확인 | `docker run --rm --gpus all ubuntu:24.04 nvidia-smi -L` 가 GPU 를 출력해야 함 |
+| 확인 | 저장소 루트에서 `docker compose exec jupyter nvidia-smi -L` 이 `.env` 의 `LAB_GPU` 로 정한 GPU 하나를 출력해야 함 |
 | 맥 · GPU 없는 PC | 지원하지 않음(5-2 는 GPU 필수). 05 결과는 실습 장표의 그림으로 본다 |
-| 디스크 | 모델 약 77GB(`--core` 면 약 63GB) + 이미지(ComfyUI 11.8GB · lab 6.5GB+) |
+| 디스크 | 모델 약 77GB(`--core` 면 약 63GB) + 이미지(ComfyUI 11.8GB · 공통 Jupyter 이미지) |
 
 ```bash
-cd ./-ai-/5-2
-bash tools/download_models.sh
-docker compose up -d --build
+cd ./-ai-
+bash 5-2/tools/download_models.sh            # 모델 → 4-1/comfyui/models
+docker compose --profile comfy up -d --build # jupyter + db + comfy
 ```
 
-- 첫 기동 : `comfy` 가 ComfyUI 와 PyTorch 를 `comfyrun` 볼륨에 설치(약 5~10분, 인터넷 필요). `docker logs -f ai4-comfy` 에서 `To see the GUI go to` 가 나오면 준비 끝
-- GPU 고르기 : `COMFY_GPU=1 LAB_GPU=1 docker compose up -d` — 번호는 `nvidia-smi -L` 순서. 기본은 둘 다 0
+- 컨테이너 : Jupyter 는 모든 강의 공통인 `ai4-jupyter`, ComfyUI 는 `ai4-comfy`. 같은 도커 네트워크라 노트북 안의 ComfyUI 주소는 `http://comfy:8188`(환경변수 `COMFY_URL`), ComfyUI 모델 폴더는 Jupyter 에 `/models` 로 읽기 전용(환경변수 `MODELS_DIR`)
+- 01 · 02 · 04 는 ComfyUI 없이 된다(`docker compose up -d` 만으로)
+
+- 첫 기동 : `comfy` 가 ComfyUI 와 PyTorch 를 `comfyrun` 볼륨에 설치(약 5~10분, 인터넷 필요). `docker compose logs -f comfy` 에서 `To see the GUI go to` 가 나오면 준비 끝
+- GPU 지정 : 루트 `.env` 의 `COMFY_GPU` · `LAB_GPU` (번호는 `nvidia-smi -L` 순서, 기본 둘 다 0) → `docker compose --profile comfy up -d` 로 다시 만든다
   - 다른 프로그램이 VRAM 을 쓰고 있는 GPU 는 피한다(`nvidia-smi` 로 확인). 남은 VRAM 이 모자라면 ComfyUI 가 모델을 나눠 올리며 크게 느려진다(실측 : Qwen-Image 한 스텝 6초 → 47초)
   - 둘이 같은 GPU 면 05 셀 12 처럼 `free()` 로 ComfyUI 메모리를 비운 뒤 Jupyter 쪽 계산을 한다
   - 강사 PC 실측 기준 : 둘 다 RTX 4080 16GB(3090 은 다른 작업이 사용 중)
 - 미리보기 : compose 가 ComfyUI 를 `--preview-method latent2rgb` 로 띄움 → 실행 중 KSampler 안에 단계별 완성본 추정이 보인다(VAE 없이 latent 를 색으로 근사한 거친 그림)
-- 도커 데스크톱은 `device_ids` 로 GPU 를 나누지 못해 `CUDA_VISIBLE_DEVICES` 로 지정한다(compose 주석)
+- 도커 데스크톱은 `device_ids` 로 GPU 를 나누지 못해 `CUDA_VISIBLE_DEVICES` 로 지정한다(루트 compose 주석)
 - 모델 파일을 윈도 드라이브에서 바인드 마운트로 읽으므로 **첫 로드가 느리다**(RTX 4080 실측 : FLUX 12B 4비트 첫 장 131.6초, 모델이 올라가 있을 때 같은 크기 한 장 27초(05 셀 7)). 두 번째부터는 ComfyUI 가 메모리에 둔 것을 씀
 
 ## 모델
@@ -160,19 +161,20 @@ docker compose up -d --build
 
 | 증상 | 원인 · 조치 |
 |---|---|
-| 셀 2 `AssertionError: GPU 가 보이지 않음` | 컨테이너에 GPU 가 안 넘어감. `docker run --rm --gpus all ubuntu:24.04 nvidia-smi -L` 확인. 윈도는 드라이버 설치 뒤 재부팅 |
+| 셀 2 `AssertionError: GPU 가 보이지 않음` | 컨테이너에 GPU 가 안 넘어감. 저장소 루트에서 `docker compose exec jupyter nvidia-smi -L` 확인. 윈도는 드라이버 설치 뒤 재부팅 |
 | ComfyUI 화면에서 `*_api.json` 이 빈 그래프 | 화면은 API 형식을 그래프로 열지 못함 → `*_t2i.json`(화면 형식)을 연다 |
 | ComfyUI 로그 `Can't find mmproj file … Qwen-Image-Edit will be broken` | 편집 모델용 경고. 이 실습(글 → 그림)에는 영향 없음 |
 | 05 첫 장이 몇 분 걸림 | 모델 파일 첫 읽기(바인드 마운트). 두 번째부터 빠름 |
-| `CUDA out of memory` (GPU 한 장) | ComfyUI 가 모델을 쥐고 있음 → 05 의 `free()` 실행 또는 `docker restart ai4-comfy` |
+| `CUDA out of memory` (GPU 한 장) | ComfyUI 가 모델을 쥐고 있음 → 05 의 `free()` 실행 또는 `docker compose restart comfy` |
 
 ## 강사용
 
 ```bash
+# 저장소 루트에서. Git Bash 는 앞에 MSYS_NO_PATHCONV=1
 # 노트북 : 셀 내용은 tools/build_notebook_0N.py 에서 고치고 컨테이너 안에서 다시 만든다
-docker exec -w /work/5-2/tools ai4-gen python build_notebook_01.py
+docker compose exec -w /work/5-2/tools jupyter python build_notebook_01.py
 # 검증 실행(출력은 notebooks/_out/, .gitignore)
-docker exec -w /work/5-2/notebooks ai4-gen jupyter nbconvert --to notebook --execute --output-dir _out 01_디퓨전_원리.ipynb
+docker compose exec -w /work/5-2/notebooks jupyter jupyter nbconvert --to notebook --execute --output-dir _out 01_디퓨전_원리.ipynb
 ```
 
 ## ComfyUI 화면 캡처 (강의 덱에 넣었던 그림)
@@ -194,7 +196,7 @@ docker exec -w /work/5-2/notebooks ai4-gen jupyter nbconvert --to notebook --exe
 
 - 단계 번호는 캡처 순간 KSampler 진행 막대의 길이에서 읽었다(`tools/screens/preview_strip.py`)
 - ComfyUI 미리보기 = 매 단계 콜백이 받은 x0(완성본 추정)를 그린 것 — ComfyUI `latent_preview.py` 의 `prepare_callback`
-- 다시 찍기 : `node tools/screens/capture.js` → `docker run --rm -v "<5-2/screens>:/s" -v "<5-2/tools/screens>:/w" ai4-lab/jupyter-clip python /w/annotate.py`
+- 다시 찍기 : `node tools/screens/capture.js` → 저장소 루트에서 `docker compose exec jupyter python /work/5-2/tools/screens/annotate.py` (번호 표시 스크립트는 컨테이너 경로 `/work/5-2/screens` 를 읽고 쓴다)
 - 로컬 그림을 구글 슬라이드에 넣을 때 : Codex 의 `batch_update_presentation` 에 `image_uris` = 로컬 경로 **하나**(여러 개를 넣으면 실패) → 그림마다 한 번씩 호출
 - 캡처는 두 번 돌았다 : 17:16 첫 실행(덱에 넣은 그림) · 17:42 재실행(README 를 고치던 셸 명령의 백틱이 `capture.js` 를 실행 — 의도하지 않음). 두 실행의 그래프 캡처로 만든 번호 표시 그림 7장은 픽셀 차이 0. 미리보기 띠만 프레임 시점이 달라(재실행엔 4단계 프레임이 없음) 첫 실행본을 유지했다
 - `screens/slide/D_strip.png`(미리보기 띠를 덱용으로 번호 없이 이은 그림)는 저장소에 올리지 않는다(.gitignore) — 푸시 보안 훅이 이 이미지를 토큰으로 오인해 차단. `c9_zimage_preview_strip.png` 에서 `tools/screens/preview_strip.py` 로 다시 만든다
@@ -228,7 +230,7 @@ CLIP 일치도 = CLIP ViT-B/32 의 그림 벡터와 프롬프트 벡터의 코�
 | 7.5 | 0.316 | 0.137 |
 | 15 | 0.323 | 0.138 |
 
-- 실행 : `docker exec ai4-gen python /work/5-2/tools/experiments/cfg_scale.py` (Git Bash 에서는 `MSYS_NO_PATHCONV=1` 앞에 붙임)
+- 실행 : 저장소 루트에서 `docker compose exec jupyter python /work/5-2/tools/experiments/cfg_scale.py` (Git Bash 에서는 `MSYS_NO_PATHCONV=1` 앞에 붙임)
 - 「다른 프롬프트 5개」에는 일부 겹치는 글(고양이 · 소파, 빨간 물체)이 섞여 있어 완전히 무관한 글보다 약간 높을 수 있음
 
 ## 강의 보강 실험 — DDPM step 수 (강의 덱 「sampler」 1번 감수, 2026-10-07)

@@ -1,8 +1,8 @@
 # 5강 실습 — CLIP · 멀티모달 임베딩 · VLM : 사진과 글을 한 공간에서 재고, 사진을 보고 답하기
 
 > 현대 AI의 원리와 구조 #5-1 이미지 생성 실습 · 뉴런데브클래스
-> 전제 : [4-1](../4-1/) 의 도커 환경을 한 번 띄운 적이 있다(`ai4-lab/jupyter` 이미지 · `hfcache` 볼륨). **LM Studio 는 필요 없다.**
-> 실습 화면 : 4-1 의 Jupyter **http://localhost:8888** 에서 `5-1/notebooks/` 의 노트북을 열면 된다 — 셀 2 가 처음 한 번 PyTorch 를 설치(CPU 판 약 200MB, 1~3분)
+> 전제 : 저장소 루트의 도커 환경(루트에서 `docker compose up -d --build` — [루트 README](../README.md)). **LM Studio 는 필요 없다.**
+> 실습 화면 : Jupyter **http://localhost:8888** 에서 `5-1/notebooks/` 의 노트북을 연다. 커널 「Python 3 (기본)」 — PyTorch(CUDA 판) · transformers · torchvision 이 이미지에 들어 있다
 > 장치 : 노트북 셀 1 의 `DEVICE` 로 NVIDIA GPU(`cuda`) · 맥 Metal(`mps`) · `cpu` 를 고른다. 기본 `auto`
 
 | 노트북 | 모델 | 장표 | 받는 모델 · 메모리 | CPU 전체 |
@@ -17,9 +17,6 @@
 
 ```
 5-1/
-├─ docker-compose.yml     4-1 스택 옆에 CLIP 용 Jupyter(ai4-clip, 포트 8889) 하나를 더 띄운다 (CPU)
-├─ docker-compose.gpu.yml 위 파일에 덧붙이면 같은 컨테이너를 CUDA 판 PyTorch + GPU 로 띄운다
-├─ clip/Dockerfile        ai4-lab/jupyter + PyTorch(CPU 또는 CUDA) + transformers
 ├─ notebooks/
 │  ├─ 01_CLIP_실습.ipynb           셀 13개. 코드 셀 첫 줄 = "# 셀 N · 제목", 설정은 셀 1
 │  ├─ 02_Qwen3VL_임베딩_실습.ipynb 셀 15개. 같은 규칙
@@ -36,42 +33,25 @@
 
 - 02 는 01 과 같은 컨테이너 · 같은 패키지(`transformers==5.17.*`)에 `torchvision` 하나만 더 쓴다(도커 이미지에 포함, 없는 Jupyter 는 셀 2 가 설치). 공식 예제가 쓰는 `qwen-vl-utils` 없이 같은 계산을 셀 2 에 넣었다
 
-## 실행 환경 — 다섯 중 하나
+## 실행 환경 — 셋 중 하나
 
 | 경로 | 셀 1 `DEVICE` | 누가 | 방법 |
 |---|---|---|---|
-| ⓪ 4-1 Jupyter 그대로 | `cpu` | 누구나(기본) · 준비 없음 | http://localhost:8888 에서 노트북을 열고 Run All. 셀 2 가 PyTorch 를 설치 |
-| ① 도커 CPU | `cpu` | 4-1 컨테이너를 건드리지 않고 따로 띄우고 싶을 때 | `docker compose up -d --build` → http://localhost:8889 |
-| ② 도커 GPU | `cuda` | NVIDIA GPU + 도커가 GPU 를 넘길 수 있는 PC | `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build` → 8889 |
-| ③ 직접 설치 · NVIDIA | `cuda` | 도커 GPU 가 안 되는 윈도 · 리눅스 PC | 아래 '직접 설치' |
+| 도커 Jupyter(공통 환경) | `auto` | 누구나(기본) | 저장소 루트에서 `docker compose up -d --build` → http://localhost:8888 → Run All |
+| ③ 직접 설치 · NVIDIA | `cuda` | 도커를 쓰지 않는 윈도 · 리눅스 PC | 아래 '직접 설치' |
 | ④ 직접 설치 · 맥 | `mps` | Apple Silicon 맥(Metal) | 아래 '직접 설치' |
 
-- ⓪ : 셀 2 가 `torch` · `transformers` 가 없으면 그 Jupyter 에 설치한다(`pip install`). 4-1 컨테이너에는 GPU 가 연결되어 있지 않으므로 CPU 판
+- 도커 Jupyter : 이미지에 `torch==2.14.*`(CUDA 13.0 판) · `torchvision==0.29.*` · `transformers==5.17.*` 가 들어 있어 셀 2 가 설치하지 않는다
+  - GPU 는 루트 `.env` 의 `LAB_GPU` 번호 하나가 컨테이너에 보인다 → `auto` 가 `cuda` 를 고른다. GPU 가 없는 PC 는 `cpu`
+  - 모델은 `hfcache` 볼륨(`/cache/hf`)에 받는다 → 컨테이너를 다시 만들어도 CLIP 모델(약 600MB)을 다시 받지 않는다
+- ③ · ④ : 셀 2 가 `torch` · `transformers` 가 없으면 그 Jupyter 에 설치한다(`pip install`)
   - 02 의 셀 2 는 `torchvision` 도 없으면 설치한다(Qwen3-VL 프로세서가 씀). 이미 깔린 torch 와 같은 판(`+cpu` · `+cu130` · 기본)을 고른다
-  - 설치는 컨테이너 안에 남는다. `docker compose up -d --build` 등으로 4-1 컨테이너를 다시 만들면 셀 2 가 다시 설치한다
-  - 받는 판 : 리눅스 · 윈도에서 NVIDIA GPU(`nvidia-smi`)가 보이면 CUDA 판, 맥은 기본판(Metal), 그 밖은 CPU 판 — ③ · ④ 에서 `pip install` 을 건너뛰어도 셀 2 가 같은 판을 받는다
+  - 받는 판 : 리눅스 · 윈도에서 NVIDIA GPU(`nvidia-smi`)가 보이면 CUDA 판, 맥은 기본판(Metal), 그 밖은 CPU 판 — 아래 `pip install` 을 건너뛰어도 셀 2 가 같은 판을 받는다
 - `DEVICE = "auto"` 는 `cuda` → `mps` → `cpu` 순으로 있는 것을 고른다. 셀 2 가 고른 장치 이름을 출력한다
 - 없는 장치를 고르면 셀 2 가 "쓸 수 있는 장치" 목록과 함께 멈춘다
 - 맥의 Metal 은 도커 컨테이너 안에서 쓸 수 없다(도커가 리눅스 가상머신에서 돈다) → 맥은 ④
 - 장치를 바꿔도 결과 숫자는 같다(아래 실측). GPU 에서 CPU 와 같은 숫자가 나오도록 셀 2 가 TF32(저정밀 곱셈)를 끈다
-
-### ① · ② 도커
-
-```bash
-cd ./-ai-/5-1
-docker compose up -d --build                                                  # ① CPU
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build  # ② GPU
-```
-
-- 4-1 의 `ai4-lab/jupyter` 이미지 위에 PyTorch(`torch==2.14.*` · `torchvision==0.29.*`) · `transformers==5.17.*` 만 더한다. 4-1 · 4-2 이미지는 그대로다
-- ① 이미지 `ai4-lab/jupyter-clip` 1.74GB(CPU 휠) · ② `ai4-lab/jupyter-clip:gpu` 6.48GB(CUDA 13.0 판). 첫 빌드는 PyTorch 를 받느라 수 분
-- 두 경로 모두 같은 컨테이너 이름 `ai4-clip` · 같은 포트 8889 — 명령을 바꿔 치면 서로 바뀐다
-- ② 전제 : 아래가 GPU 이름을 출력해야 한다. 실패하면 ③ 으로
-  ```bash
-  docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu24.04 nvidia-smi -L
-  ```
-- 컨테이너 `ai4-clip` 은 4-1 과 같은 compose 프로젝트(`ai4-lab`)에 들어가고 `hfcache` 볼륨을 같이 쓴다 → CLIP 모델(약 600MB)을 한 번 받으면 남는다
-- 포트 8889 는 내 PC(127.0.0.1)에서만 열린다. 겹치면 `CLIP_PORT=8890 docker compose up -d`
+- 아래 실측 표의 ⓪ · ① · ② 는 **실습 환경 통합(루트 compose 하나) 전**의 옛 경로다 — ⓪ 옛 4-1 Jupyter(PyTorch 없음, 셀 2 가 CPU 판 설치) · ① 옛 5-1 도커 CPU(`ai4-clip`) · ② 옛 5-1 도커 GPU. 통합 이미지에서 다시 측정한 숫자는 아직 없다
 
 ### ③ · ④ 직접 설치 (도커 없이)
 
@@ -270,12 +250,11 @@ transformers 5.17.0 · float32 · ① 도커 CPU · 2026-10-05. 수치는 실행
 | 증상 | 해결 |
 |---|---|
 | 셀 2 가 `PyTorch 가 없어 … 설치 중` 에서 1~3분 멈춤 | 정상. 처음 한 번 PyTorch 를 받는 중. 다음부터는 바로 넘어간다 |
-| 셀 2 설치가 `pip` 오류로 실패 | 인터넷 연결 확인. 사내망이면 ① 도커(빌드 때 받음) 또는 ③ · ④ 로 미리 설치 |
+| 셀 2 설치가 `pip` 오류로 실패(③ · ④) | 인터넷 연결 확인. 사내망이면 도커 Jupyter(빌드 때 받음) 또는 위 `pip install` 로 미리 설치 |
 | 셀 2 에서 `DEVICE = '…' 를 이 환경에서 쓸 수 없다` | 셀 1 의 `DEVICE` 를 메시지의 "쓸 수 있는 장치" 중 하나로(또는 `auto`) |
-| ② 에서 `could not select device driver` · `nvidia-container-cli` 오류 | 도커가 GPU 를 못 넘긴다 → ① 로 되돌리거나(`docker compose up -d --build`) ③ 직접 설치 |
-| `ai4-lab/jupyter` 이미지가 없다는 빌드 오류 | 4-1 에서 `docker compose up -d --build` 를 먼저 |
+| 도커에서 `could not select device driver` · `nvidia-container-cli` 오류 | 도커가 GPU 를 못 넘긴다 → 루트 `docker-compose.yml` 의 `jupyter` 아래 `deploy` 블록을 지우고 CPU 로 올리거나 ③ 직접 설치 |
 | 셀 2 에서 모델을 못 받음 | 인터넷 연결 확인. 받은 뒤에는 볼륨에 남아 다시 받지 않는다 |
-| 8889 포트를 이미 쓰는 중 | `CLIP_PORT=8890 docker compose up -d` 후 http://localhost:8890 |
+| 8888 포트를 이미 쓰는 중 | 루트 `.env` 에 `JUPYTER_PORT=18888` 을 넣고 `docker compose up -d` 후 http://localhost:18888 |
 | 내 사진을 쓰고 싶다 | `5-1/images` 에 넣고 셀 1 의 `MY_IMAGE` 에 파일 이름 |
 | 02 셀 2 에서 커널이 죽음(메모리) | 셀 1 `DTYPE = "bfloat16"`. 도커는 Docker Desktop 의 메모리 한도를 10GB 이상으로 |
 | 02 가 CPU 에서 오래 걸림 | 정상. 사진 150장 약 2분 · 문서 6장 약 1분 반. 셀 10 의 문서는 한 장에 이미지 토큰 약 950개 |

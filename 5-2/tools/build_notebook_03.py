@@ -34,7 +34,7 @@ md('''
 | 7 | latent 한 칸을 바꾸면 그림의 어디가 바뀌나 | Latent 채널 2번 |
 | 8 | 글자 복원 — SD1.5 · SDXL(4채널) vs FLUX · Qwen-Image(16채널) VAE 를 ComfyUI 로 | VAE 4번 · Latent 채널(16채널로 간 이유) |
 
-- 실행 : **Run → Run All Cells**. GPU 필수. 셀 8 은 ComfyUI(`docker compose` 의 comfy 서비스)가 떠 있어야 한다. 전체 약 2~3분
+- 실행 : **Run → Run All Cells**. GPU 필수. 셀 8 은 ComfyUI(저장소 루트에서 `docker compose --profile comfy up -d` 로 켜는 comfy 서비스)가 떠 있어야 한다. 전체 약 2~3분
 ''')
 
 md('''

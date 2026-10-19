@@ -1,7 +1,7 @@
 # ComfyUI 캡처 → 잘라서 번호 표시(①②…)를 얹은 슬라이드용 그림
 #   좌표는 캡처를 가로 2000 으로 줄여 본 화면 기준(실제 픽셀 = 좌표 × 원본폭/2000)
 from PIL import Image, ImageDraw, ImageFont
-S, O = '/s', '/s/slide'
+S, O = '/work/5-2/screens', '/work/5-2/screens/slide'
 import os; os.makedirs(O, exist_ok=True)
 FB = '/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf'
 ORG = (242, 107, 58)

@@ -1,6 +1,6 @@
 import glob, numpy as np
 from PIL import Image, ImageDraw, ImageFont
-fs = sorted(glob.glob('/s/zseq_*.png'))
+fs = sorted(glob.glob('/work/5-2/screens/zseq_*.png'))
 fr = []
 for f in fs:
     a = np.asarray(Image.open(f).convert('RGB')).astype(int)
@@ -22,4 +22,4 @@ for i, s in pick:
 W = Image.new('RGB', (len(tiles) * 372 - 12, 410), 'white'); d = ImageDraw.Draw(W)
 for j, (s, im) in enumerate(tiles):
     W.paste(im, (j * 372, 0)); d.text((j * 372 + 180, 385), f'{s} / 30 단계', fill='black', font=font, anchor='mm')
-W.save('/s/c9_zimage_preview_strip.png'); print('pick', pick)
+W.save('/work/5-2/screens/c9_zimage_preview_strip.png'); print('pick', pick)

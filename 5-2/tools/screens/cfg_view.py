@@ -1,11 +1,11 @@
 # CFG 장용 ComfyUI 캡처 두 장(SD1.5 · FLUX) — 실제 실행 화면에서 잘라 번호 표시
-#   docker run --rm -v "<5-2/screens>:/s" -v "<5-2/tools/screens>:/w" ai4-lab/jupyter-clip python /w/cfg_view.py
+#   저장소 루트에서 : docker compose exec jupyter python /work/5-2/tools/screens/cfg_view.py   (Git Bash 는 앞에 MSYS_NO_PATHCONV=1)
 from PIL import Image, ImageDraw, ImageFont
 FB = '/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf'
 ORG = (242, 107, 58)
 
 def panel(src, crop, items, title, width=1000):
-    im = Image.open(f'/s/{src}.png').convert('RGB'); f = im.width / 2000
+    im = Image.open(f'/work/5-2/screens/{src}.png').convert('RGB'); f = im.width / 2000
     im = im.crop(tuple(int(v * f) for v in crop)); k = width / im.width
     im = im.resize((width, int(im.height * k)), Image.LANCZOS)
     HB = 56; out = Image.new('RGB', (width, im.height + HB), (34, 34, 38)); out.paste(im, (0, HB))
@@ -26,4 +26,4 @@ b = panel('c5_flux_graph', (330, 190, 1285, 535),
           'FLUX.1-dev — 가이던스 증류 (cfg 1)')
 W = Image.new('RGB', (a.width + b.width + 24, max(a.height, b.height)), 'white')
 W.paste(a, (0, 0)); W.paste(b, (a.width + 24, 0))
-W.save('/s/slide/N_cfg_comfy.png', optimize=True); print(W.size)
+W.save('/work/5-2/screens/slide/N_cfg_comfy.png', optimize=True); print(W.size)

@@ -18,7 +18,7 @@ class Book:
                            "source": s.strip("\n").splitlines(keepends=True)})
 
     def save(self):
-        nb = {"cells": self.cells, "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
+        nb = {"cells": self.cells, "metadata": {"kernelspec": {"display_name": "Python 3 (음성 · 6-1)", "language": "python", "name": "voice"},
                                                 "language_info": {"name": "python"}}, "nbformat": 4, "nbformat_minor": 5}
         self.path.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")
         print(self.path, len(self.cells), "cells")

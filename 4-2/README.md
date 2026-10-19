@@ -2,7 +2,7 @@
 
 > 현대 AI의 원리와 구조 #4-2 벡터디비 실습 · 뉴런데브클래스
 > 준비물: **Docker Desktop**(실행 중) 하나. 실습은 전부 **Jupyter 노트북**이고, 실행하면 그래프가 그려진다.
-> 환경은 4-1 과 같은 **`4-1/docker-compose.yml` 하나**다 (db · pgAdmin · Jupyter).
+> 환경은 모든 강의 공통인 **저장소 루트 `docker-compose.yml` 하나**다 (jupyter · db + 선택 pgAdmin). 커널은 「Python 3 (기본)」.
 > 3부(30 · 31)는 4-1 실습1 이 채운 **Qwen3-Embedding-8B 임베딩**과 BM25 역색인을 그대로 쓴다.
 
 ```
@@ -37,8 +37,9 @@
 ## ① 환경
 
 ```bash
-cd ./-ai-/4-1
-docker compose up -d --build
+cd ./-ai-
+cp env.example .env              # 처음 한 번
+docker compose up -d --build      # jupyter + db (4-1 에서 이미 띄웠다면 그대로)
 ```
 
 - 브라우저로 **http://localhost:8888** → `4-2/notebooks` (로그인 없음)
@@ -102,11 +103,11 @@ docker compose up -d --build
 
 | 증상 | 해결 |
 |---|---|
-| 그래프의 한글이 □ 로 나온다 | Jupyter 이미지를 다시 빌드: `docker compose build jupyter && docker compose up -d` |
+| 그래프의 한글이 □ 로 나온다 | Jupyter 이미지를 다시 빌드(저장소 루트에서): `docker compose build jupyter && docker compose up -d` |
 | 포트 8888 사용 중 | macOS/Linux: `JUPYTER_PORT=18888 docker compose up -d` · PowerShell: `$env:JUPYTER_PORT=18888; docker compose up -d` |
 | 00번 셀 3 에 ✘ | 4-1 실습1 의 임베딩(셀 8 · 9)과 인덱스(셀 10)를 끝까지 |
 | 31번에서 `30번을 먼저 실행한다` | 30번을 실행하면 `results/klue_runs.pkl` 이 생긴다 |
 | 21·22번 recall 이 이상하다(모든 설정에서 같음) | 다른 노트북이 남긴 벡터 인덱스를 플래너가 쓰는 경우. 노트북 셀 2 가 정리하므로 셀 1 부터 다시 실행 |
-| 인덱스 빌드에서 `DiskFull: could not resize shared memory segment … No space left on device` | 디스크가 아니라 db 컨테이너의 `/dev/shm` 부족. 병렬 빌드가 maintenance_work_mem(1GB)만큼 잡는다. 4-1 에서 `docker compose up -d db` 로 `shm_size: 2g` 를 반영한 뒤, 노트북 셀 1 부터 다시 |
+| 인덱스 빌드에서 `DiskFull: could not resize shared memory segment … No space left on device` | 디스크가 아니라 db 컨테이너의 `/dev/shm` 부족. 병렬 빌드가 maintenance_work_mem(1GB)만큼 잡는다. 저장소 루트에서 `docker compose up -d db` 로 `shm_size: 2g` 를 반영한 뒤, 노트북 셀 1 부터 다시 |
 | 인덱스 빌드가 매우 느리다 | `docker compose up -d --build` 로 db 설정(maintenance_work_mem 1GB)이 반영됐는지 00번 셀 2 로 확인 |
-| 처음부터 | 20번(합성 데이터)은 다시 실행하면 초기화된다. 전부 지우려면 4-1에서 `docker compose down -v` (임베딩도 지워진다) |
+| 처음부터 | 20번(합성 데이터)은 다시 실행하면 초기화된다. 전부 지우려면 저장소 루트에서 `docker compose down -v` (임베딩 · 모든 강의의 모델 캐시도 지워진다) |

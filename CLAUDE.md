@@ -5,4 +5,5 @@
 > 긴 작업 도중이나 컨텍스트 요약 뒤에도 같다.
 
 - 강의 장표 원본은 Google Slides. 저장소에는 실습(도커 · 노트북 · 문서)만 둔다
-- 실습 환경 : `4-1/docker-compose.yml` (db · jupyter · pgadmin). 자세한 절차는 `4-1/README.md`
+- 실습 환경 : 저장소 루트 `docker-compose.yml` 하나(jupyter · db + 선택 pgadmin · comfy). 이미지는 `docker/`. 자세한 절차는 루트 `README.md`
+- Jupyter 컨테이너는 루트 compose 의 `ai4-jupyter` 하나만 쓴다. 강의 폴더에 compose · Dockerfile 을 새로 만들지 않고, `docker run` 으로 Jupyter 컨테이너를 따로 띄우지 않는다(일괄 실행은 `docker compose exec`)

@@ -1,7 +1,7 @@
 # 3강 실습 — 벡터 연산을 실제 산업 데이터로
 
 > 현대 AI의 원리와 구조 #3 임베딩 · 벡터 연산(장표 17~23) 실습 · 뉴런데브클래스
-> 준비물 : [4-1](../4-1/) 의 도커 환경(`docker compose up -d --build`, pgvector DB · Jupyter)과 **LM Studio**(Qwen3-Embedding-8B, 서버 켬). 실습 화면은 같은 Jupyter(http://localhost:8888) → `3-1/notebooks`
+> 준비물 : 저장소 루트의 도커 환경(루트에서 `docker compose up -d --build`, pgvector DB · Jupyter — [루트 README](../README.md))과 **LM Studio**(Qwen3-Embedding-8B, 서버 켬). 실습 화면은 같은 Jupyter(http://localhost:8888) → `3-1/notebooks`
 
 장표의 벡터 연산(평균 · 가감 · 프로토타입 분류 · Rocchio)을 공식이 아니라 **실제 서비스가 하는 일**로 증명한다.
 허깅페이스의 공개 데이터를 4-1 과 같은 **PostgreSQL + pgvector** 테이블에 넣고 Qwen3-Embedding-8B 로 임베딩한 뒤,
@@ -44,7 +44,7 @@
 | 쓰는 곳 | 각 노트북 셀 6 `embed_table()` : 빈 행을 먼저 캐시에서 채우고, 남은 행만 LM Studio 로 계산해 캐시에도 넣는다 |
 | 효과 | 같은 글은 한 번만 계산 — 01 · 02(같은 쇼핑몰 상품), 03 · 04(판례 · 사고 · 결함 신고)가 겹치는 글을 다시 계산하지 않는다. 셀 1 `RESET = True` 로 테이블을 다시 만들어도 벡터는 캐시에서 돌아온다 |
 | 크기 | 계산한 서로 다른 글 수만큼 (한 행 약 16KB) |
-| 지우기 | `TRUNCATE lab3.emb_cache` (실습 테이블과 따로. `docker compose down -v` 는 DB 전체를 지운다) |
+| 지우기 | `TRUNCATE lab3.emb_cache` (실습 테이블과 따로. `docker compose down -v` 는 DB 전체와 모델 캐시 볼륨까지 지운다) |
 
 - 표본은 라벨마다 같은 시드로 뽑는다 → 작은 표본은 큰 표본의 앞부분. 표본을 키우면 이미 계산한 글은 캐시에서 채워지고 늘어난 만큼만 계산한다
 

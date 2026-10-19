@@ -1,5 +1,5 @@
 # sampler 장 1번 「DDPM : step 을 줄이면 품질 급락」 검증 — 같은 프롬프트 · 시드로 DDPM 20 · 50 · 1000 step 과 DDIM 20 step 비교
-#   docker exec ai4-gen python /work/5-2/tools/experiments/ddpm_steps.py
+#   저장소 루트에서 : docker compose exec jupyter python /work/5-2/tools/experiments/ddpm_steps.py   (Git Bash 는 앞에 MSYS_NO_PATHCONV=1)
 #   결과 : 5-2/outputs/exp/ddpm_steps.png · 표(CLIP 일치도 · 남은 노이즈 양 · 시간)
 import os, time, torch, numpy as np, torch.nn.functional as F
 from PIL import Image

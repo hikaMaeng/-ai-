@@ -1,6 +1,6 @@
 // ComfyUI 화면 캡처(강사용) — 헤드리스 Chrome(CDP)으로 실제 실행 화면을 찍음. 결과 : 5-2/screens/*.png
 //   node tools/screens/capture.js [sd15 flux qwen zimg swap]   (인자 없으면 전부, ComfyUI 가 127.0.0.1:8188 에 떠 있어야 함)
-//   그 뒤 번호 표시 그림 : docker run --rm -v "<5-2/screens>:/s" -v "<5-2/tools/screens>:/w" ai4-lab/jupyter-clip python /w/annotate.py
+//   그 뒤 번호 표시 그림(저장소 루트에서) : docker compose exec jupyter python /work/5-2/tools/screens/annotate.py   (Git Bash 는 앞에 MSYS_NO_PATHCONV=1)
 //   Chrome 경로는 cdp.js 의 CHROME
 const fs = require('fs');
 const { launch, connect, sleep } = require('./cdp');

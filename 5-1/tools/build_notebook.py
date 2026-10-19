@@ -42,16 +42,16 @@ md('''
 
 - 실행 : **Run → Run All Cells** (첫 실행은 모델 약 600MB 를 받는다. 이후 전체 약 30초)
 - 장치 : 셀 1 의 `DEVICE` — `auto`(있으면 NVIDIA GPU → 맥 Metal → CPU 순) · `cuda` · `mps` · `cpu`
-- 어느 Jupyter 에서 열어도 된다 : 4-1 의 8888 · 5-1 도커 8889 · 직접 설치(5-1/README.md)
-  - PyTorch 가 없는 Jupyter(4-1 의 8888)에서는 셀 2 가 처음 한 번 PyTorch · transformers 를 설치한다(CPU 판 약 200MB, 1~3분)
-  - GPU 로 돌리려면 5-1/README.md 의 도커 GPU 또는 직접 설치
+- 어느 Jupyter 에서 열어도 된다 : 도커 Jupyter(http://localhost:8888, 커널 「Python 3 (기본)」) · 직접 설치(5-1/README.md)
+  - 도커 Jupyter 에는 PyTorch(CUDA 판) · transformers 가 들어 있다. GPU 가 넘어온 PC 면 그대로 GPU 를 쓴다
+  - PyTorch 가 없는 Jupyter(직접 설치)에서는 셀 2 가 처음 한 번 PyTorch · transformers 를 설치한다(CPU 판 약 200MB, 1~3분)
 - 사진은 `5-1/images/images.csv` 에 출처 · 라이선스와 함께 적혀 있다
 ''')
 
 md('''
 ### 셀 1 · 설정
 - `DEVICE` : 계산 장치. `auto` 는 NVIDIA GPU(`cuda`) → 맥 Metal(`mps`) → `cpu` 순으로 있는 것을 고름
-  - 도커 CPU 컨테이너에서는 `cpu` 만, 도커 GPU 컨테이너 · 직접 설치에서는 `cuda` · `mps` 도 된다
+  - 도커 Jupyter 는 GPU 가 넘어온 PC 면 `cuda`, 아니면 `cpu`. 직접 설치(맥)에서는 `mps` 도 된다
   - 장치를 바꿔도 결과 숫자는 같다(소수 넷째 자리까지). 속도만 다르다
 - `MODEL` : CLIP ViT-B/32 (이미지 224×224, 조각 32×32, 출력 512차원) — 장표와 같은 모델
 - `IMAGE_DIR` : `auto` 는 이 노트북 옆의 `../images`
@@ -85,7 +85,7 @@ md('''
 - 셀 1 의 `DEVICE` 대로 장치를 고르고, 모델을 그 장치에 올린다
 - PyTorch · transformers 가 없으면 이 Jupyter 에 설치한다(처음 한 번). 받는 판은 `DEVICE` 와 컴퓨터로 정함
   - NVIDIA GPU 가 보이면 CUDA 판(수 GB) · 맥은 Metal 이 든 기본판 · 그 밖은 CPU 판(약 200MB)
-  - 4-1 의 8888 컨테이너에는 GPU 가 연결되어 있지 않으므로 CPU 판이 설치됨
+  - 도커 Jupyter 에는 이미 들어 있어 설치하지 않는다
 - `CLIPModel` 하나에 이미지 타워 · 텍스트 타워 · 투영 · 온도가 다 들어 있다
 - `images.csv` : 파일 · 그룹 · 라벨 · 출처 · 라이선스
 ''')
@@ -97,7 +97,7 @@ from pathlib import Path
 for k, v in {"HF_HUB_VERBOSITY": "error", "TRANSFORMERS_VERBOSITY": "error",
              "HF_HUB_DISABLE_PROGRESS_BARS": "1", "HF_HUB_DISABLE_SYMLINKS_WARNING": "1"}.items():
     os.environ.setdefault(k, v)
-# 도커(4-1 · 5-1)는 모델을 hfcache 볼륨(/cache/hf)에 둔다 → 두 컨테이너가 한 번 받은 모델을 같이 씀
+# 도커는 모델을 hfcache 볼륨(/cache/hf)에 둔다 → 컨테이너를 다시 만들어도 한 번 받은 모델을 그대로 씀
 if os.access("/cache", os.W_OK):
     os.environ.setdefault("HF_HOME", "/cache/hf")
 warnings.filterwarnings("ignore", message="IProgress not found")
@@ -107,7 +107,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 from PIL import Image
-# PyTorch · transformers 가 없는 Jupyter(4-1 의 8888 등)면 여기서 한 번 설치한다
+# PyTorch · transformers 가 없는 Jupyter(직접 설치 등)면 여기서 한 번 설치한다
 import importlib, importlib.util, shutil, subprocess, sys
 def pip_install(*args):
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "--root-user-action=ignore", *args])

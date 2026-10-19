@@ -1,8 +1,8 @@
 # 월드모델 실습 — 예측 · 계획 · 평가를 직접 만들어 본다
 
 > 현대 AI의 원리와 구조 · 월드모델 실습 · 뉴런데브클래스
-> 전제 : 도커가 있는 PC. **GPU 는 선택**(없어도 5개 모두 CPU 로 돈다 — 시간만 더 걸림). 이미지 이해 실습의 Jupyter 이미지(`ai4-lab/jupyter`)를 한 번 빌드했다
-> 실습 화면 : Jupyter **http://localhost:8893** → `6-2/notebooks/`
+> 전제 : 도커가 있는 PC. **GPU 는 선택**(없어도 5개 모두 CPU 로 돈다 — 시간만 더 걸림). 환경은 저장소 루트의 `docker-compose.yml` 하나([루트 README](../README.md))
+> 실습 화면 : Jupyter **http://localhost:8888** → `6-2/notebooks/` · 커널 「Python 3 (기본)」
 > 데이터 · 모델 : **내려받는 것이 없다.** 합성 데이터와 직접 구현한 시뮬레이터만 쓴다(torch · numpy · matplotlib · pandas)
 
 강의의 자 = **현재 상황과 행동에서 결과를 예측하고, 그 예측으로 행동을 선택하는 것**. 노트북마다 작은 장치를 직접 만들어, 강의에서 본 개념이 숫자로 어떻게 나오는지 확인한다. 결과가 기대와 달라도 그대로 남긴다.
@@ -17,8 +17,6 @@
 
 ```
 6-2/
-├─ docker-compose.yml        wm(Jupyter, 8893) 하나
-├─ lab/Dockerfile            ai4-lab/jupyter + torch 2.11 · numpy · matplotlib · pandas
 ├─ notebooks/                01~05 + wm_common.py(밸브 시뮬레이터 · 시드 · 결과 저장) + wm_vision.py(사각형 환경 · VQ · 작은 CNN · 밸브 시뮬레이터)
 │  ├─ results/               노트북이 쓴 핵심 숫자(measured_0N.json) · 그림(.gitignore)
 │  └─ _out/                  강사용 실행 사본(.gitignore)
@@ -32,21 +30,23 @@
 | 항목 | 값 |
 |---|---|
 | GPU | 선택. 없으면 CPU 로 돈다(03 은 어차피 CPU — 은닉 64 의 작은 신경망이라 GPU 가 더 느림) |
-| 확인 | GPU 를 쓸 때 `docker run --rm --gpus all ubuntu:24.04 nvidia-smi -L` 가 GPU 를 출력해야 함 |
-| 디스크 | 이미지 약 7GB |
+| 확인 | GPU 를 쓸 때 저장소 루트에서 `docker compose exec jupyter nvidia-smi -L` 이 `.env` 의 `LAB_GPU` 로 정한 GPU 하나를 출력해야 함 |
+| 디스크 | 공통 Jupyter 이미지 하나(모든 강의가 같이 씀) |
 | 시간 | GPU 약 25분(5개 합계) · CPU 더 걸림. 04 의 CPU 설정은 시드 1개 · 적은 스텝으로 줄어듦(셀 1 이 출력) — 품질이 낮아짐 |
 
 ```bash
-cd ./-ai-/4-1 && docker compose build          # 처음 한 번 : 바탕 이미지 ai4-lab/jupyter
-cd ../6-2
-docker compose up -d --build
+cd ./-ai-
+cp env.example .env              # 처음 한 번 (LAB_GPU = 쓸 GPU 번호)
+docker compose up -d --build      # 모든 강의 공통 Jupyter(ai4-jupyter) + db
 ```
 
-- GPU 선택 : `WM_GPU=1 docker compose up -d` — 번호는 `nvidia-smi -L` 순서. 기본 0. GPU 가 없는 PC 는 `docker-compose.yml` 의 `deploy` 블록을 지운다
-- 강사 검증 : `WM_GPU=1 bash tools/run_notebooks.sh` (이미지 `WM_IMAGE`, 기본 `ai4-lab/jupyter-voice`) → `notebooks/_out/` 에 실행 사본, `python tools/show_out.py 01` 로 셀별 출력 확인
+- GPU 지정 : 루트 `.env` 의 `LAB_GPU` — 번호는 `nvidia-smi -L` 순서. 기본 0. GPU 가 없는 PC 는 루트 `docker-compose.yml` 의 `jupyter` 아래 `deploy` 블록을 지운다
+- 강사 검증 : `bash tools/run_notebooks.sh` (떠 있는 `ai4-jupyter` 안에서 실행, CPU 로는 `WM_GPU=none`) → `notebooks/_out/` 에 실행 사본, `python tools/show_out.py 01` 로 셀별 출력 확인
 - 노트북이 시드 · 학습 스텝 · 표본 수 같이 **결과를 바꾸는 설정을 모두 출력**한다. 시드는 3개를 쓰고 평균±표준편차를 낸다
 
 ## 강사 PC 실행 결과(RTX 4080, 2026-10-13, 노트북이 쓴 숫자)
+
+> 통합 전 이미지(torch 2.11)에서 측정한 기록이다. 지금의 기본 커널은 torch 2.14 라 학습 결과 숫자가 조금 달라질 수 있다 — 통합 이미지에서 다시 측정한 숫자는 아직 없다.
 
 | 노트북 | 확인한 것 | 결과 |
 |---|---|---|
@@ -69,5 +69,5 @@ docker compose up -d --build
 ## 문제 해결
 
 - 노트북이 시작 직후 멈춘 것처럼 보이면 첫 셀의 설정 출력을 확인한다. 학습은 셀마다 수십 초~수 분 걸린다
-- 한글이 네모로 보이면 이미지를 `ai4-lab/jupyter` 부터 다시 빌드한다(나눔 글꼴이 바탕 이미지에 들어 있다)
-- `run_notebooks.sh` 는 노트북이 실패해도 소요 시간만 찍는다 — 실패가 의심되면 `docker run … jupyter nbconvert --execute` 로 직접 돌려 오류를 본다
+- 한글이 네모로 보이면 저장소 루트에서 Jupyter 이미지를 다시 빌드한다(`docker compose build jupyter && docker compose up -d`, 나눔 글꼴이 이미지에 들어 있다)
+- `run_notebooks.sh` 는 노트북이 실패해도 소요 시간만 찍는다 — 실패가 의심되면 저장소 루트에서 `docker compose exec -w /work/6-2/notebooks jupyter jupyter nbconvert --to notebook --execute --output-dir _out <노트북>` 으로 직접 돌려 오류를 본다

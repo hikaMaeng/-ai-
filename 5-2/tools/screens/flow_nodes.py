@@ -1,10 +1,10 @@
 # 강의 「플로 매칭 — ComfyUI 화면」 장용 그림 : Qwen-Image 그래프 캡처에서 모델 로더 · 모델 샘플링(AuraFlow) · KSampler 부분만 잘라 번호 표시
 #   좌표는 잘라 1500px 로 키운 그림 기준(눈으로 잰 값)
-#   docker run --rm -v "<5-2/screens>:/s" -v "<5-2/tools/screens>:/w" ai4-lab/jupyter-clip python /w/flow_nodes.py
+#   저장소 루트에서 : docker compose exec jupyter python /work/5-2/tools/screens/flow_nodes.py   (Git Bash 는 앞에 MSYS_NO_PATHCONV=1)
 from PIL import Image, ImageDraw, ImageFont
 FB = '/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf'
 ORG = (242, 107, 58)
-im = Image.open('/s/c6_qwen_graph.png').convert('RGB')
+im = Image.open('/work/5-2/screens/c6_qwen_graph.png').convert('RGB')
 f = im.width / 2000                                   # 잘라내기 좌표 = 가로 2000 으로 본 화면 기준
 crop = (0, 120, 1150, 625)
 im = im.crop(tuple(int(v * f) for v in crop))
@@ -20,4 +20,4 @@ box(3, (545, 152, 957, 186), (530, 169))              # 모델 샘플링 : 샘�
 box(4, (1060, 278, 1472, 312), (1046, 295))           # KSampler : 스텝 수
 box(5, (1060, 350, 1472, 386), (1046, 368))           # KSampler : 샘플러 이름 euler
 box(6, (1060, 388, 1472, 422), (1046, 405))           # KSampler : 스케줄러 simple
-im.save('/s/slide/FLOW_nodes.png', optimize=True); print(im.size)
+im.save('/work/5-2/screens/slide/FLOW_nodes.png', optimize=True); print(im.size)

@@ -1,5 +1,5 @@
 # CFG w 별 생성 그림 띠 — 실습 02 셀 9 와 같은 계산(같은 프롬프트 · 시드 42 · DDIM 20 · 빈 프롬프트 = ε_u)을 512px 로 다시 저장
-#   docker exec ai4-gen python /work/5-2/tools/experiments/cfg_strip.py
+#   저장소 루트에서 : docker compose exec jupyter python /work/5-2/tools/experiments/cfg_strip.py   (Git Bash 는 앞에 MSYS_NO_PATHCONV=1)
 #   결과 : 5-2/screens/slide/N_cfg_w.png
 import os, glob, torch, torch.nn.functional as F
 from PIL import Image, ImageDraw, ImageFont

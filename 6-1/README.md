@@ -1,8 +1,8 @@
 # 음성 모델 실습 — 소리를 숫자로 읽고, 정수로 만들고, 다시 소리로
 
 > 현대 AI의 원리와 구조 · 음성 모델 실습 · 뉴런데브클래스
-> 전제 : **NVIDIA GPU**(VRAM 16GB 권장 · 파형·멜 실습은 GPU 없이 가능) + 도커가 GPU 를 넘길 수 있는 PC. 이미지 이해 실습의 Jupyter 이미지(`ai4-lab/jupyter`)를 한 번 빌드했다
-> 실습 화면 : Jupyter **http://localhost:8892** → `6-1/notebooks/`
+> 전제 : **NVIDIA GPU**(VRAM 16GB 권장 · 파형·멜 실습은 GPU 없이 가능) + 도커가 GPU 를 넘길 수 있는 PC. 환경은 저장소 루트의 `docker-compose.yml` 하나([루트 README](../README.md))
+> 실습 화면 : Jupyter **http://localhost:8888** → `6-1/notebooks/` · 커널 **「Python 3 (음성 · 6-1)」**(노트북에 지정돼 있어 열면 자동으로 선택된다)
 > 모델 · 데이터 : 노트북이 처음 실행될 때 Hugging Face 에서 받아 `hfcache` 볼륨에 둔다(합계 약 25GB). 로그인 · 승인이 필요한 모델은 쓰지 않는다
 
 강의의 자 = **1초를 몇 개의 숫자 · 벡터 · 토큰으로 나타내는가**. 노트북마다 그 숫자를 직접 측정한다.
@@ -19,8 +19,6 @@
 
 ```
 6-1/
-├─ docker-compose.yml        voice(Jupyter, 8892) 하나
-├─ lab/Dockerfile            ai4-lab/jupyter + torch 2.11 · torchaudio 2.11 · transformers 4.57.6 · qwen-asr · qwen-tts · audioseal
 ├─ notebooks/                01~07 + voice_common.py(데이터 받기 · 들려 주기 · CER). 코드 셀 첫 줄 = "# 셀 N · 제목"
 │  ├─ results/               노트북 출력 그림 · 표(.gitignore)
 │  └─ _out/                  강사용 실행 사본(.gitignore)
@@ -35,19 +33,19 @@
 | 항목 | 값 |
 |---|---|
 | GPU | NVIDIA, VRAM 16GB 권장. 가장 큰 것 : 04 · 06 의 Qwen2.5-Omni-3B 약 12GB |
-| 확인 | `docker run --rm --gpus all ubuntu:24.04 nvidia-smi -L` 가 GPU 를 출력해야 함 |
+| 확인 | 저장소 루트에서 `docker compose exec jupyter nvidia-smi -L` 이 `.env` 의 `LAB_GPU` 로 정한 GPU 하나를 출력해야 함 |
 | 맥 · GPU 없는 PC | 01 만 CPU 로 돈다(나머지는 GPU 필수) |
-| 디스크 | 모델 · 데이터 약 25GB(hfcache) + 이미지 7.2GB |
+| 디스크 | 모델 · 데이터 약 25GB(hfcache) + 공통 Jupyter 이미지 |
 
 ```bash
-cd ./-ai-/4-1 && docker compose build          # 처음 한 번 : 바탕 이미지 ai4-lab/jupyter
-cd ../6-1
-docker compose up -d --build
+cd ./-ai-
+cp env.example .env              # 처음 한 번 (LAB_GPU = 쓸 GPU 번호)
+docker compose up -d --build      # 모든 강의 공통 Jupyter(ai4-jupyter) + db
 ```
 
-- GPU 선택 : `VOICE_GPU=1 docker compose up -d` — 번호는 `nvidia-smi -L` 순서. 기본 0
+- GPU 지정 : 루트 `.env` 의 `LAB_GPU` — 번호는 `nvidia-smi -L` 순서. 기본 0. 바꾼 뒤 `docker compose up -d`
 - 바탕화면이 같은 GPU 를 쓰면 VRAM 이 1~2GB 줄어든다. 남은 VRAM 이 모자라면 윈도는 시스템 메모리로 넘겨 **수십 배 느려진다**(오류 없이) — 노트북은 큰 모델을 하나씩 올리고 내린다
-- 이미지가 이미지 이해·생성 실습과 따로인 이유 : torchaudio 의 마지막 판이 2.11 이라 torch 를 2.11 로 맞춤(Qwen3-TTS 가 torchaudio 를 씀), qwen-asr · qwen-tts 가 transformers 4.57.x 를 고정
+- 6-1 만 커널이 따로(venv `/opt/voice`, 커널 이름 `voice`)인 이유 : torchaudio 의 마지막 판이 2.11 이라 torch 를 2.11 로 맞춤(Qwen3-TTS 가 torchaudio 를 씀), qwen-asr · qwen-tts 가 transformers 4.57.x 를 고정
 
 ## 데이터 · 모델
 
@@ -75,8 +73,8 @@ docker compose up -d --build
 
 ```bash
 cd ./-ai-/6-1/tools
-for i in 1 2 3 4 5 6 7; do python build_notebook_0$i.py; done   # 노트북 다시 만들기(출력 없이)
-cd .. && VOICE_GPU=1 bash tools/run_notebooks.sh 01 02          # 실행 사본 → notebooks/_out/
+for i in 1 2 3 4 5 6 7; do python build_notebook_0$i.py; done   # 노트북 다시 만들기(출력 없이, 커널 voice 지정)
+cd .. && bash tools/run_notebooks.sh 01 02                      # 떠 있는 ai4-jupyter 안에서 voice 커널로 실행 → notebooks/_out/
 python tools/show_out.py 02                                     # 셀별 출력 · 그림 꺼내기
 ```
 

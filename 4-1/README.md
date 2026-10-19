@@ -3,12 +3,10 @@
 > 현대 AI의 원리와 구조 #4-1 벡터디비 실습 · 뉴런데브클래스
 > 준비물: **Docker Desktop**(실행 중) · **LM Studio**(Qwen3-Embedding-8B 로드, 서버 켬). Python·PostgreSQL 설치는 필요 없습니다.
 > 실습 화면은 **Jupyter 노트북**(http://localhost:8888) 하나. 데이터 적재 · 임베딩 서버 호출 · 검색 실험을 전부 노트북에서 한다.
-> 4-2 실습도 이 폴더의 docker-compose 로 함께 뜬다 → [4-2](../4-2/)
+> 실습 환경은 저장소 루트의 `docker-compose.yml` 하나(모든 강의 공통, [루트 README](../README.md#실습-환경--compose-하나--jupyter-컨테이너-하나)). 4-2 도 같은 환경 → [4-2](../4-2/)
 
 ```
 4-1/
-├─ docker-compose.yml        db · jupyter · pgadmin 3개 서비스
-├─ jupyter/                  4-1·4-2 공통 JupyterLab 이미지 (http://localhost:8888)
 ├─ notebooks/                실습 노트북 (번호 순서대로). 코드 셀 첫 줄 = "# 셀 N · 제목"
 │  ├─ 01_데이터적재_임베딩.ipynb  실습1 KLUE-MRC 적재 → LM Studio 배치 임베딩 → emb128 HNSW
 │  ├─ 01b_진행확인.ipynb      실습1 임베딩 진행 건수 확인 (적재 중 다른 탭에서)
@@ -18,18 +16,22 @@
 │  ├─ 05_벡터검색.ipynb        실습5 연산자 · HNSW · MRL 차원 · 후보 재정렬 · 종합 평가
 │  ├─ 06_필터.ipynb          실습6 PostFilter · PreFilter · iterative scan · 부분 인덱스
 │  └─ 07_동의어_불용어.ipynb   실습7 사전 테이블 lexicon 으로 불용어 · 동의어 · 복합어
-├─ db/
+└─ comfyui/                 5-2 의 ComfyUI 모델 · 노드 자리(강사 PC 자산, 저장소에 올리지 않음)
+
+환경 파일(저장소 루트)
+├─ docker-compose.yml        jupyter · db + 선택 pgadmin · comfy
+├─ docker/db/
 │  ├─ Dockerfile             pgvector(pg17) + mecab-ko + mecab-ko-dic + textsearch_ko
 │  └─ init/                  최초 기동 시 1회: 01 익스텐션 · 02 스키마(lexicon, docs, questions) · 03 BM25 역색인(bm25_tf · bm25_df 테이블 2 · 트리거 4)
-└─ pgadmin/                  서버 자동 등록(servers.json) · 비밀번호 파일(pgpass)
+└─ docker/pgadmin/           서버 자동 등록(servers.json) · 비밀번호 파일(pgpass)
 ```
 
 ## 타임테이블
 
 | 단계 | 노트북 | 하는 일 | 계산 시간 (강사 PC 실측) |
 |---|---|---|---|
-| ① 환경 기동 | – | `docker compose up -d --build` | 빌드 **2~8분** |
-| ② 화면 열기 | – | Jupyter http://localhost:8888 · (보조) pgAdmin http://localhost:5050 | – |
+| ① 환경 기동 | – | 저장소 루트에서 `docker compose up -d --build` | 빌드 **10~20분**(처음 한 번, PyTorch 포함) |
+| ② 화면 열기 | – | Jupyter http://localhost:8888 · (보조) pgAdmin http://localhost:5050 (`--profile pgadmin`) | – |
 | ③ 실습1 | 01 | 데이터 적재 → 임베딩 | 텍스트 약 40초 · 임베딩 약 3시간 |
 | ④ 실습2 | 02 | 코퍼스와 형태소 분석 | 수 초 |
 | ⑤ 실습3 | 03 | ts_rank 계열 평가 | 약 5분 (셀 9) |
@@ -38,7 +40,7 @@
 | ⑧ 실습6 | 06 | 필터 (임베딩 완료 후) | 약 30초 |
 | ⑨ 실습7 | 07 | 불용어 · 동의어 · 복합어 (lexicon) | 약 2~3분 |
 
-> 실측(2026-09-27, Windows · Docker 29.7.2, 캐시 없는 최초 빌드) `compose up --build` 7분 34초.
+> 실측(2026-09-27, Windows · Docker 29.7.2, 캐시 없는 최초 빌드, 통합 전 4-1 전용 Jupyter 이미지 기준) `compose up --build` 7분 34초.
 > 임베딩(Qwen3-Embedding-8B Q4_K_M, LM Studio, 배치 16): 지문 약 0.5~0.6건/s(5,309개 약 2시간 30분~3시간) · 질문 약 5건/s(약 20분).
 > 임베딩 속도는 LM Studio 를 돌리는 PC 성능에 따라 크게 달라진다. 실습2~4 는 임베딩 없이 텍스트 적재만으로 할 수 있다.
 
@@ -46,13 +48,15 @@
 
 ```bash
 git clone https://github.com/hikaMaeng/-ai-.git
-cd ./-ai-/4-1
-docker compose up -d --build
+cd ./-ai-
+cp env.example .env                      # 처음 한 번 (GPU 번호 · LM Studio 주소)
+docker compose up -d --build              # jupyter + db
+docker compose --profile pgadmin up -d    # (선택) pgAdmin
 ```
 
 - 첫 실행은 이미지를 받고 mecab-ko 를 소스에서 컴파일합니다(12코어 1분 30초, 4코어 약 5분). 두 번째부터는 몇 초.
-- Jupyter 이미지도 함께 빌드됩니다(캐시 없이 약 1분 30초). 4-1 · 4-2 모두 Jupyter 에서 실습합니다.
-- Intel/AMD, Apple Silicon, Windows ARM 모두 동작합니다(`db/Dockerfile` 주석 참고).
+- Jupyter 이미지(모든 강의 공통, PyTorch 두 벌 포함)도 함께 빌드됩니다(처음 한 번 10~20분). 4-1 · 4-2 는 커널 「Python 3 (기본)」을 씁니다.
+- Intel/AMD, Apple Silicon, Windows ARM 모두 동작합니다(`docker/db/Dockerfile` 주석 참고).
 - 포트(5432 · 5050 · 8888)는 **내 PC(127.0.0.1)에서만** 열립니다. pgAdmin·Jupyter 는 로그인이 없으므로 같은 Wi-Fi 의 다른 기기가 접속하지 못하게 막아 둔 것입니다.
 - 확인:
   ```bash
@@ -71,7 +75,7 @@ docker compose up -d --build
 
 준비: LM Studio 에서 **Qwen3-Embedding-8B** 를 로드하고 서버를 켠다.
 
-테이블(docs · questions)은 DB 최초 기동 때 `db/init` 이 만들어 둔다. 노트북은 비우고 채우기만 한다.
+테이블(docs · questions)은 DB 최초 기동 때 `docker/db/init` 이 만들어 둔다. 노트북은 비우고 채우기만 한다.
 
 | 셀 | 하는 일 |
 |---|---|
@@ -135,7 +139,7 @@ docker compose up -d --build
 
 ## ⑥ 실습4 · BM25 — `04_BM25.ipynb`
 
-BM25 역색인 테이블 · 함수 · 트리거는 `db/init/03_bm25.sql` 이 DB 최초 기동 때 설치한다. 노트북은 쓰고 재기만 한다.
+BM25 역색인 테이블 · 함수 · 트리거는 `docker/db/init/03_bm25.sql` 이 DB 최초 기동 때 설치한다. 노트북은 쓰고 재기만 한다.
 
 ```
 BM25(D,Q) = Σ IDF(t) · tf·(k1+1) / (tf + k1·(1 − b + b·|D|/avgdl))
@@ -176,7 +180,7 @@ IDF(t)    = ln(1 + (N − df + 0.5)/(df + 0.5))
 ## ⑨ 실습7 · 불용어 · 동의어 · 복합어 — `07_동의어_불용어.ipynb`
 
 형태소 분석 · 불용어 · 동의어는 pgvector 기능이 아니다. PostgreSQL 과 형태소 분석기(textsearch_ko)에는 한국어 불용어 · 동의어 목록이 없고, 분석기 쪽 파일(사전 파일 · mecab 사용자 사전)을 고치는 것은 SQL 밖의 일이다.
-그래서 **사전 테이블 하나(`lexicon`)** 로 관리한다. 테이블과 함수는 DB 최초 기동 때 `db/init/02_schema.sql` 이 만든다.
+그래서 **사전 테이블 하나(`lexicon`)** 로 관리한다. 테이블과 함수는 DB 최초 기동 때 `docker/db/init/02_schema.sql` 이 만든다.
 
 | kind | term | target | 언제 | 하는 일 |
 |---|---|---|---|---|
@@ -204,12 +208,12 @@ IDF(t)    = ln(1 + (N − df + 0.5)/(df + 0.5))
 | 증상 | 해결 |
 |---|---|
 | `port is already allocated` (5432/5050/8888) | macOS/Linux: `DB_PORT=15432 PGADMIN_PORT=15050 JUPYTER_PORT=18888 docker compose up -d`<br>PowerShell: `$env:DB_PORT=15432; $env:PGADMIN_PORT=15050; $env:JUPYTER_PORT=18888; docker compose up -d` |
-| pgAdmin 이 안 열림 | 첫 기동은 20~30초 걸린다(첫 요청도 몇 초). `docker compose logs pgadmin` 에 `Listening at` 이 보이면 새로고침 |
+| pgAdmin 이 안 열림 | `docker compose --profile pgadmin up -d` 로 켰는지 확인. 첫 기동은 20~30초 걸린다(첫 요청도 몇 초). `docker compose logs pgadmin` 에 `Listening at` 이 보이면 새로고침 |
 | `error while creating mount source path … mkdir /run/desktop/mnt/host/<드라이브>: file exists` | 외장 드라이브 등 해당 드라이브를 Docker Desktop 이 못 읽는 상태. Docker Desktop 을 재시작하거나, 저장소를 C: 드라이브로 옮겨 실행 |
 | 노트북에서 DB `Connection refused` | `docker compose ps` 로 db 가 healthy 인지 확인 |
 | 실습1 셀 6 · 실습5 셀 9 에서 LM Studio 연결 실패 | LM Studio 서버가 켜졌는지 확인. 포트가 1234 가 아니면 셀 1 의 `LMSTUDIO_URL` 을 고친다 |
 | 실습5 · 6 셀 2 에서 `실습1 의 지문 임베딩이 다 차야 한다` | 임베딩이 아직 진행 중. `01b_진행확인.ipynb` 로 확인, 멈췄다면 실습1 셀 6 에서 Run Selected Cell and All Below |
-| 실습7 셀 2 에서 `relation "lexicon" does not exist` | lexicon 테이블을 넣기 전에 만든 DB. `docker compose down -v` 후 다시 기동(임베딩도 지워짐), 또는 `db/init/02_schema.sql` 의 사전 테이블 부분만 psql 로 실행 |
-| 전부 처음부터 | `docker compose down -v` 후 ①부터 |
+| 실습7 셀 2 에서 `relation "lexicon" does not exist` | lexicon 테이블을 넣기 전에 만든 DB. `docker compose down -v` 후 다시 기동(임베딩 · 모델 캐시도 지워짐), 또는 `docker/db/init/02_schema.sql` 의 사전 테이블 부분만 psql 로 실행 |
+| 전부 처음부터 | 저장소 루트에서 `docker compose down -v` 후 ①부터 (DB 와 함께 다른 강의가 받아 둔 모델 캐시 hfcache 도 지워진다) |
 
 > 주의: 실습 도중 `docker compose up -d --build` 를 다시 하면 컨테이너가 재생성되어 실행 중인 노트북이 끊긴다.

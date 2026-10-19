@@ -1,0 +1,155 @@
+# 실습 환경 — 저장소의 유일한 compose 파일. 모든 강의가 Jupyter 컨테이너 하나(ai4-jupyter)를 같이 쓴다
+#
+#   cp env.example .env               # GPU 번호 · LM Studio 주소 (처음 한 번, 값은 env.example 설명 참고)
+#   docker compose up -d --build       # jupyter + db 기동 (첫 빌드는 PyTorch 두 벌을 받아 10~20분)
+#   docker compose down                # 멈추고 컨테이너 삭제(볼륨의 모델 · 데이터 · DB 는 남는다)
+#
+#   실습 화면 : http://localhost:8888  → 왼쪽 파일 목록에서 강의 폴더(3-1 … 8-1)의 notebooks
+#     커널 : 「Python 3 (기본)」 = 6-1 을 뺀 전부 · 「Python 3 (음성 · 6-1)」 = 6-1
+#   선택 서비스(profile 로 켬)
+#     pgAdmin  http://localhost:5050  : docker compose --profile pgadmin up -d   (4-1 · 4-2 DB 를 눈으로 확인)
+#     ComfyUI  http://localhost:8188  : docker compose --profile comfy up -d     (5-2 의 03 · 05)
+#
+# 포트는 전부 127.0.0.1 에만 연다(로그인 없는 Jupyter · pgAdmin · ComfyUI 를 같은 Wi-Fi 의 다른 기기가 열지 못하게)
+#
+# 프로젝트 이름 ai4-lab : 볼륨 이름이 ai4-lab_hfcache · ai4-lab_pgdata · ai4-lab_pgadmin · ai4-lab_comfyrun 이 된다
+#   예전 강의별 compose 와 같은 이름이라, 이미 받아 둔 모델 · 데이터셋 · DB 를 그대로 쓴다
+name: ai4-lab
+
+services:
+  # JupyterLab (모든 강의의 실습 화면). 저장소 루트 전체를 /work 로 연결한다
+  jupyter:
+    build: ./docker/lab
+    image: ai4-lab/jupyter-all
+    container_name: ai4-jupyter
+    environment:
+      # GPU 선택 : nvidia-smi -L 의 번호. 도커 데스크톱은 device_ids 로 GPU 를 나누지 못함 → 프로세스가 볼 GPU 를 직접 지정
+      - CUDA_DEVICE_ORDER=PCI_BUS_ID
+      - CUDA_VISIBLE_DEVICES=${LAB_GPU:-0}
+      # 5-2 : 노트북 안의 ComfyUI 주소(같은 도커 네트워크) · ComfyUI 모델 폴더(읽기 전용)
+      - COMFY_URL=http://comfy:8188
+      - MODELS_DIR=/models
+      # 8-1 : 호스트(내 PC)의 LM Studio 서버(OpenAI 호환 API)
+      - LMSTUDIO_URL=${LMSTUDIO_URL:-http://host.docker.internal:1234/v1}
+      - AGENT_MODEL=${AGENT_MODEL:-}
+      - AGENT_MODE=${AGENT_MODE:-auto}
+      - AGENT_MIN_TOKENS=${AGENT_MIN_TOKENS:-0}   # 생각을 먼저 쓰는 모델이면 4096 처럼 하한을 준다(느려짐)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux 용. Docker Desktop(Windows·macOS)은 없어도 된다
+    ports:
+      - "127.0.0.1:${JUPYTER_PORT:-8888}:8888"
+    volumes:
+      - .:/work                                # 저장소 루트 (노트북에서 고친 내용이 호스트에 그대로 남는다)
+      - hfcache:/cache                         # 모델 · 데이터셋 캐시 : 컨테이너를 지워도 남아 다시 받지 않는다
+      - ./4-1/comfyui/models:/models:ro        # 5-2 : ComfyUI 와 같은 모델 파일(SD1.5 · VAE · 웨이트 모양 읽기)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # pgvector(PostgreSQL 17) + 한국어 형태소 분석기 — 3-1 · 4-1 · 4-2
+  db:
+    build: ./docker/db
+    image: ai4-lab/pgvector-ko:pg17
+    container_name: ai4-db
+    environment:
+      POSTGRES_USER: lab
+      POSTGRES_PASSWORD: lab
+      POSTGRES_DB: lab
+    # 벡터 인덱스 빌드 실습(4-2)용 설정
+    #   maintenance_work_mem : HNSW 그래프를 메모리 안에서 만들 크기 (부족하면 빌드가 매우 느려진다)
+    #   max_parallel_maintenance_workers : HNSW·IVFFlat 병렬 빌드
+    #   jit=off : 짧은 질의의 지연시간 측정에 잡음이 끼지 않게
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c maintenance_work_mem=1GB
+      -c max_parallel_maintenance_workers=4
+      -c jit=off
+    # 병렬 인덱스 빌드는 maintenance_work_mem(1GB) 크기의 공유 메모리를 /dev/shm 에 잡는다
+    #   1g 로 두면 오버헤드만큼 모자라 "could not resize shared memory segment" 로 실패할 수 있다 → 여유를 둔 2g
+    shm_size: 2g
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/db/init:/docker-entrypoint-initdb.d:ro   # 최초 1회: 익스텐션·스키마 생성
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lab -d lab"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # pgAdmin (선택) : docker compose --profile pgadmin up -d
+  pgadmin:
+    image: dpage/pgadmin4:9
+    container_name: ai4-pgadmin
+    profiles: ["pgadmin"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: lab@example.com
+      PGADMIN_DEFAULT_PASSWORD: lab
+      # 로그인 화면 없이 바로 쓰는 데스크톱 모드
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    # libpq 는 권한이 0600 이 아닌 pgpass 를 무시한다.
+    # Windows 에서 마운트한 파일은 0777 로 보이므로 복사 후 chmod 해서 쓴다.
+    entrypoint: >
+      /bin/sh -c "cp /pgadmin4/pgpass.src /var/lib/pgadmin/pgpass
+      && chmod 600 /var/lib/pgadmin/pgpass
+      && exec /entrypoint.sh"
+    ports:
+      - "127.0.0.1:${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin:/var/lib/pgadmin
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./docker/pgadmin/pgpass:/pgadmin4/pgpass.src:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ComfyUI (선택, 5-2) : docker compose --profile comfy up -d
+  #   모델 : 4-1/comfyui/models 에 둔다 → 5-2/tools/download_models.sh (약 75GB)
+  #   첫 기동 : ComfyUI 를 comfyrun 볼륨에 설치(약 5~10분, 인터넷 필요)
+  #   GPU 두 장 : COMFY_GPU 와 LAB_GPU 에 서로 다른 번호를 주면 나눠 쓴다. 한 장이면 둘 다 0
+  comfy:
+    image: mmartial/comfyui-nvidia-docker:ubuntu24_cuda12.8-latest
+    container_name: ai4-comfy
+    profiles: ["comfy"]
+    ports:
+      - "127.0.0.1:${COMFY_PORT:-8188}:8188"
+    environment:
+      - TZ=Asia/Seoul
+      - BASE_DIRECTORY=/basedir          # 모델 · 노드 · 결과는 아래 바인드 마운트에, ComfyUI 본체 · venv 는 comfyrun 볼륨에
+      - WANTED_UID=0
+      - WANTED_GID=0
+      - USE_PIPUPGRADE=none              # 기동할 때마다 패키지를 올리지 않음(재현성)
+      - COMFY_CMDLINE_EXTRA=--preview-method latent2rgb   # 실행 중 KSampler 안에 단계별 완성본 추정을 그림(강의 「실행 중 미리보기」)
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - CUDA_DEVICE_ORDER=PCI_BUS_ID       # 번호를 nvidia-smi -L 순서와 같게
+      - CUDA_VISIBLE_DEVICES=${COMFY_GPU:-0}  # 도커 데스크톱은 device_ids 로 GPU 를 나누지 못함 → 프로세스가 볼 GPU 를 직접 지정
+    volumes:
+      - comfyrun:/comfy/mnt
+      - ./4-1/comfyui/models:/basedir/models
+      - ./4-1/comfyui/custom_nodes/ComfyUI-GGUF:/basedir/custom_nodes/ComfyUI-GGUF   # 양자화(GGUF) 모델을 읽는 노드 하나만
+      - ./5-2/workflows:/basedir/user/default/workflows/5-2                           # 노트북이 쓴 워크플로 → 화면의 워크플로 목록
+      - ./5-2/outputs/comfy:/basedir/output
+      - ./5-2/comfy/userscripts:/userscripts_dir:ro                                   # 기동 때 GGUF 노드의 파이썬 패키지 설치
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${COMFY_GPU:-0}"]
+              capabilities: [gpu]
+
+volumes:
+  pgdata:
+  pgadmin:
+  hfcache:
+  comfyrun:
