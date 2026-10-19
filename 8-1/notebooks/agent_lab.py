@@ -161,7 +161,7 @@ class LLM:
             resp = requests.post(f"{self.url}/chat/completions", json=payload, timeout=self.timeout)
         except requests.exceptions.ConnectionError:
             raise LLMUnavailable(f"LM Studio 서버에 연결하지 못했다 : {self.url}\n"
-                                 "  ① LM Studio 의 Developer 탭에서 서버를 켠다  ② 포트가 1234 가 아니면 LMSTUDIO_PORT 를 맞춰 컨테이너를 다시 올린다\n"
+                                 "  ① LM Studio 의 Developer 탭에서 서버를 켠다  ② 포트가 1234 가 아니면 루트 .env 의 LMSTUDIO_URL 을 맞춰 docker compose up -d 로 컨테이너를 다시 올린다\n"
                                  "  ③ 서버를 못 켜면 AGENT_MODE=replay 로 강사 실행 결과를 재생한다") from None
         dt = time.perf_counter() - t0
         if resp.status_code != 200:
@@ -541,9 +541,20 @@ def bars(ax, labels, means, stds=None, colors=None, title=None, ylabel=None, fmt
 
 
 # ───────────────────────── 강사용 시험 훅 ─────────────────────────
-if os.environ.get("AGENT_DRY"):
+def _dry_id():
+    # 환경변수 AGENT_DRY, 없으면 표식 파일 notebooks/.agent_dry (JupyterLab 화면에서 컨테이너를 다시 만들지 않고 시험할 때. 강사용 · gitignore 대상)
+    v = os.environ.get("AGENT_DRY", "").strip()
+    if not v:
+        try:
+            v = (HERE / ".agent_dry").read_text(encoding="utf-8").strip()
+        except OSError:
+            v = ""
+    return v
+
+
+if _dry_id():
     # 서버 없이 노트북 전체를 돌려 코드 경로를 확인한다(AGENT_DRY=01 → tools/dry/dry_01.py 의 install() 이 LLM 을 가짜로 바꿈). 숫자는 의미가 없다
     import importlib
     import sys
     sys.path.insert(0, str(HERE.parent / "tools" / "dry"))
-    importlib.import_module("dry_" + os.environ["AGENT_DRY"]).install(sys.modules[__name__])
+    importlib.import_module("dry_" + _dry_id()).install(sys.modules[__name__])
