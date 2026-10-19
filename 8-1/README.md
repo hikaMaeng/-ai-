@@ -71,5 +71,5 @@ dry 모드: 환경변수 `AGENT_DRY=NN`, 또는 JupyterLab 화면에서 시험�
 | 대상 | 방법 | 결과 |
 |---|---|---|
 | 01~05 | dry nbconvert + 실제 Chrome JupyterLab 전체 실행(통합 환경 이전의 8894 컨테이너) | 오류 0, 그림 렌더 확인(01=3 · 02=7 · 03=5 · 04=5 · 05=8) |
-| 06 | dry nbconvert | 오류 0, 채점기 자체 점검 15/15. Chrome 실행은 [이슈 #3](https://github.com/hikaMaeng/-ai-/issues/3) 슬롯에서 별도 기록 |
+| 06 | dry nbconvert + 통합 환경(8888) Chrome 전체 실행 | 오류 0, 그림 5장 렌더(픽셀 검사), 채점기 자체 점검 15/15. 기록: [이슈 #3 댓글](https://github.com/hikaMaeng/-ai-/issues/3#issuecomment-6260209246) |
 | 실제 LLM | — | 미측정 |
