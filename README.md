@@ -60,7 +60,20 @@ docker compose exec jupyter python -c "import torch; print(torch.cuda.get_device
 - GPU 가 없는 PC : `docker-compose.yml` 의 `jupyter` 아래 `deploy` 블록을 지우고 올린다(GPU 가 필요 없는 강의만 된다)
 - 도커가 GPU 를 넘기는지 확인 : Windows 는 Docker Desktop(WSL2) + NVIDIA 드라이버, Linux 는 NVIDIA Container Toolkit
 
-### 4. 선택 서비스(profile)
+### 4. 실습 기준 PC · 자원 상한
+
+실습은 **수강생 PC** 를 기준으로 만든다 — 노트북 i7 · RAM 16GB · NVIDIA VRAM 8GB(또는 통합 메모리 16GB 맥).
+
+| 자원 | 기준 | 어떻게 지키나 |
+|---|---|---|
+| CPU | 노트북 i7 ≈ 데스크톱 코어 6개 | compose 상한 : Jupyter `LAB_CPUS=6` · DB `DB_CPUS=2` |
+| 메모리 | RAM 16GB 중 도커 12GB | compose 상한 : Jupyter `LAB_MEM=9g` · DB `DB_MEM=3g`(스왑 없음 → 넘으면 커널이 죽는다) |
+| VRAM | 8GB 목표 · **12GB 상한**(넘으면 실습 부적합, 넘는 부분은 오프로딩 · CPU) | 도커로 제한 불가 → 노트북마다 실행 기록에서 측정(이슈 #3) |
+
+- 강사 PC 처럼 큰 머신도 같은 상한으로 돌려 수강생 PC 에서 되는지 확인한다. 값은 `.env` 로 바꾼다(`env.example` 참고)
+- 맥의 도커에는 NVIDIA GPU 가 없다 — GPU 실습은 CPU 로 돌며 크게 느려진다
+
+### 5. 선택 서비스(profile)
 
 | 서비스 | 켜기 | 화면 | 쓰는 곳 |
 |---|---|---|---|
@@ -70,13 +83,13 @@ docker compose exec jupyter python -c "import torch; print(torch.cuda.get_device
 - ComfyUI 와 Jupyter 를 서로 다른 GPU 에 두려면 `.env` 의 `COMFY_GPU` 와 `LAB_GPU` 를 다르게 준다
 - 노트북 안에서 ComfyUI 주소는 `http://comfy:8188`(환경변수 `COMFY_URL`)
 
-### 5. LM Studio(3-1 · 4-1 · 4-2 임베딩 · 8-1 LLM)
+### 6. LM Studio(3-1 · 4-1 · 4-2 임베딩 · 8-1 LLM)
 
 LM Studio 는 컨테이너 밖, 내 PC 에서 돈다. 컨테이너 안의 `localhost` 는 컨테이너 자신이라 노트북은 `host.docker.internal` 로 닿는다.
 8-1 은 `.env` 의 `LMSTUDIO_URL` · `AGENT_MODEL` · `AGENT_MODE` · `AGENT_MIN_TOKENS` 를 컨테이너 환경변수로 받는다(설명은 `env.example`).
 3-1 · 4-1 · 4-2 노트북은 `.env` 를 읽지 않고 **셀 1 의 `LMSTUDIO_URL`**(기본 `http://host.docker.internal:1234/v1`)을 쓴다. LM Studio 포트가 1234 가 아니면 그 셀의 포트를 바꾼다.
 
-### 6. 강사용 일괄 실행
+### 7. 강사용 일괄 실행
 
 `6-1` · `6-2` · `8-1` 의 `tools/run_notebooks.sh` 는 떠 있는 `ai4-jupyter` 안에서 `docker compose exec` 로 nbconvert 를 돌린다 — 새 컨테이너를 만들지 않는다. 결과 사본은 각 `notebooks/_out/`.
 

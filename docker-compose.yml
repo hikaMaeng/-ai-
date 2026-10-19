@@ -14,6 +14,13 @@
 #
 # 프로젝트 이름 ai4-lab : 볼륨 이름이 ai4-lab_hfcache · ai4-lab_pgdata · ai4-lab_pgadmin · ai4-lab_comfyrun 이 된다
 #   예전 강의별 compose 와 같은 이름이라, 이미 받아 둔 모델 · 데이터셋 · DB 를 그대로 쓴다
+# 자원 상한 : 수강생 PC 기준(노트북 i7 · RAM 16GB · VRAM 8GB, 또는 통합 메모리 16GB 맥)에 맞춘다
+#   강사 PC 처럼 큰 머신에서도 이 상한 안에서 돌려 보아야 수강생 PC 에서 되는지 알 수 있다
+#   CPU : 노트북 i7 은 전력 제한 때문에 오래 돌리면 데스크톱 코어 약 6개 수준 → Jupyter 6 · DB 2
+#   메모리 : RAM 16GB 에서 OS · 브라우저 몫 약 4GB 를 빼면 도커에 12GB → Jupyter 9GB · DB 3GB
+#            memswap_limit 을 같은 값으로 둬서 스왑으로 숨지 않고 넘으면 그 프로세스가 종료된다(커널 죽음 = 상한 초과)
+#   VRAM 은 도커로 제한하지 못한다 → 실습 기준 8GB 목표 · 12GB 상한은 실행 기록(이슈 #3)으로 확인
+#   값은 .env 의 LAB_CPUS · LAB_MEM · DB_CPUS · DB_MEM · COMFY_CPUS · COMFY_MEM 으로 바꾼다
 name: ai4-lab
 
 services:
@@ -34,6 +41,12 @@ services:
       - AGENT_MODEL=${AGENT_MODEL:-}
       - AGENT_MODE=${AGENT_MODE:-auto}
       - AGENT_MIN_TOKENS=${AGENT_MIN_TOKENS:-0}   # 생각을 먼저 쓰는 모델이면 4096 처럼 하한을 준다(느려짐)
+      # CPU 상한(cpus)은 시간 몫만 줄이고 보이는 코어 수(48 등)는 그대로라, 수치 라이브러리가 코어 수만큼 스레드를 만들어 서로 다툰다
+      #   → 스레드 수를 상한과 맞춘다(LAB_CPUS 는 정수로)
+      - OMP_NUM_THREADS=${LAB_CPUS:-6}
+      - MKL_NUM_THREADS=${LAB_CPUS:-6}
+      - OPENBLAS_NUM_THREADS=${LAB_CPUS:-6}
+      - NUMEXPR_MAX_THREADS=${LAB_CPUS:-6}
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Linux 용. Docker Desktop(Windows·macOS)은 없어도 된다
     ports:
@@ -49,6 +62,9 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    cpus: ${LAB_CPUS:-6}
+    mem_limit: ${LAB_MEM:-9g}
+    memswap_limit: ${LAB_MEM:-9g}
     depends_on:
       db:
         condition: service_healthy
@@ -75,6 +91,9 @@ services:
     # 병렬 인덱스 빌드는 maintenance_work_mem(1GB) 크기의 공유 메모리를 /dev/shm 에 잡는다
     #   1g 로 두면 오버헤드만큼 모자라 "could not resize shared memory segment" 로 실패할 수 있다 → 여유를 둔 2g
     shm_size: 2g
+    cpus: ${DB_CPUS:-2}
+    mem_limit: ${DB_MEM:-3g}        # shared_buffers 512MB + 인덱스 빌드 1GB + /dev/shm 사용분
+    memswap_limit: ${DB_MEM:-3g}
     ports:
       - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
@@ -121,6 +140,9 @@ services:
     image: mmartial/comfyui-nvidia-docker:ubuntu24_cuda12.8-latest
     container_name: ai4-comfy
     profiles: ["comfy"]
+    cpus: ${COMFY_CPUS:-6}
+    mem_limit: ${COMFY_MEM:-12g}    # 5-2 의 05 를 돌릴 때만 켠다(그동안 Jupyter 는 노트북 하나만)
+    memswap_limit: ${COMFY_MEM:-12g}
     ports:
       - "127.0.0.1:${COMFY_PORT:-8188}:8188"
     environment:
