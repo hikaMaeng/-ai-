@@ -73,6 +73,7 @@ print(f"이 노트북이 LLM 을 부르는 횟수 : 약 {sum(est.values())}번 �
 b.md('''
 ### 도구 상자 — 첫 행동 뽑기 · 분포 · 엔트로피
 - `sample_first` : 같은 상태에서 첫 행동만 N번 뽑는다(루프를 돌리지 않는다 — 도구도 실행하지 않는다)
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
 - **엔트로피**(bit) = −Σ p·log₂p. 한 행동에 몰리면 0, 행동 후보가 `k`개이고 균등하게 퍼지면 log₂k. 분포가 얼마나 흐린지 하나의 수로 본다
 - 서버가 없고 캐시도 없으면 안내 문구만 내고 빈 표본을 돌려준다 — 뒤의 셀이 무너지지 않게 빈 표본이어도 표와 그림이 그려진다
 ''')
@@ -81,17 +82,22 @@ b.code('''
 def first_action(r):
     return r.tool_calls[0]["name"] if r.tool_calls else NONE_
 
-def sample_first(question, tools, system=SYSTEM_D, temperature=0.7, n=N, client=None):
-    """같은 상태에서 첫 행동을 n번 뽑는다. 표본 i 는 seed=i, sample=i"""
+def sample_first(question, tools, system=SYSTEM_D, temperature=0.7, n=N, client=None, workers=None):
+    """같은 상태에서 첫 행동을 n번 뽑는다. 표본 i 는 seed=i, sample=i. 표본끼리 독립이라 pmap 으로 겹쳐 돌고, 결과는 표본 번호 순서"""
     c = client or llm
     schemas = [t.schema() for t in tools]
     msgs = [{"role": "system", "content": system}, {"role": "user", "content": question["q"] if isinstance(question, dict) else question}]
+    def one(i):
+        try:
+            return first_action(c.chat(msgs, tools=schemas, temperature=temperature, seed=i, max_tokens=CFG["max_tokens"], sample=i))
+        except (LLMUnavailable, CacheMiss) as e:
+            return e
     out = []
-    try:
-        for i in range(n):
-            out.append(first_action(c.chat(msgs, tools=schemas, temperature=temperature, seed=i, max_tokens=CFG["max_tokens"], sample=i)))
-    except (LLMUnavailable, CacheMiss) as e:
-        print("⚠ 서버를 부를 수 없고 캐시도 없다 :", str(e).splitlines()[0], "→ 이 표본은 비어 있다")
+    for r in pmap(one, range(n), workers=workers):
+        if isinstance(r, Exception):             # 앞 표본까지만 쓴다(차례로 돌릴 때와 같은 결과)
+            print("⚠ 서버를 부를 수 없고 캐시도 없다 :", str(r).splitlines()[0], "→ 이 표본은 비어 있다")
+            break
+        out.append(r)
     return out
 
 def share(acts):
@@ -139,6 +145,7 @@ b.md('''
 ### 셀 2 · 한 상태의 행동 분포
 - 상태 = 시스템지시 + 질문 하나. 같은 상태에서 첫 행동을 N번(temperature 0.7) 뽑는다
 - 가로축 = 첫 행동으로 부른 도구, 세로축 = 그 행동이 나온 비율. 초록 막대가 정답 첫 행동이다
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
 - 정답 첫 행동이 얼마나 나오는지, 나머지가 어디로 퍼지는지를 본다. **분포가 한 막대에 몰리는지 퍼지는지**는 질문 유형마다 다를 수 있다
 ''')
 b.code('''
@@ -196,6 +203,8 @@ b.md('''
 - 재현하려면 seed 를 고정하거나 temperature 를 낮추라고 한다. **서버가 정말 지키는지**는 돌려 봐야 안다
 - 같은 메시지 · temperature 0.7 · 같은 seed 로 서버를 **두 번 직접**(캐시를 쓰지 않는 `LLM(mode="live")`) 불러 같은 행동이 나오는지 센다. 이어서 temperature 0 에서 seed 만 다르게 한 두 호출도 비교한다
 - 이 셀의 응답은 셀 2 · 3 의 캐시 칸과 겹치지 않도록 `sample=900+k` 칸을 쓴다
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
+- 한 쌍 안의 호출은 차례로 부르고, 쌍끼리 겹쳐 돈다
 - 캐시만 쓰는 모드(`replay`)에서는 서버를 부를 수 없으므로 안내만 하고 넘어간다
 ''')
 b.code('''
@@ -210,14 +219,15 @@ else:
     sig = lambda r: (tuple((c["name"], json.dumps(c["arguments"], sort_keys=True, ensure_ascii=False)) for c in r.tool_calls), r.content[:80])
     rows = []
     try:
-        for k in range(K):
+        def repro_pair(k):                       # 쌍 k 의 네 호출(한 쌍 안에서는 차례로, 쌍끼리는 pmap 으로 겹쳐)
             kw = dict(tools=schemas, max_tokens=CFG["max_tokens"])
             a1 = live.chat(msgs, temperature=0.7, seed=777 + k, sample=900 + k, **kw)
             a2 = live.chat(msgs, temperature=0.7, seed=777 + k, sample=900 + k, **kw)
             z1 = live.chat(msgs, temperature=0.0, seed=777 + k, sample=900 + k, **kw)
             z2 = live.chat(msgs, temperature=0.0, seed=1777 + k, sample=900 + k, **kw)
-            rows.append({"k": k, "T=0.7 같은 seed": first_action(a1) + " / " + first_action(a2), "같은가": sig(a1) == sig(a2),
-                         "T=0 다른 seed": first_action(z1) + " / " + first_action(z2), "같은가 ": sig(z1) == sig(z2)})
+            return {"k": k, "T=0.7 같은 seed": first_action(a1) + " / " + first_action(a2), "같은가": sig(a1) == sig(a2),
+                    "T=0 다른 seed": first_action(z1) + " / " + first_action(z2), "같은가 ": sig(z1) == sig(z2)}
+        rows = pmap(repro_pair, range(K))
         dfR = pd.DataFrame(rows)
         print(dfR.to_string(index=False))
         REPRO = {"T=0.7 같은 seed 일치": int(dfR["같은가"].sum()), "T=0 다른 seed 일치": int(dfR["같은가 "].sum()), "쌍 수": len(dfR)}
@@ -235,6 +245,7 @@ b.md('''
   - (b) **모호** : 조회 도구 세 개(`lookup_order` · `search_customer` · `get_policy`)의 설명을 「데이터를 가져온다.」 하나로
   - (c) **같은 설명** : 서로 다른 두 도구 `lookup_order` 와 `search_customer` 의 설명을 똑같이 「주문과 고객 정보를 조회한다.」 로
 - 모델이 도구를 구별할 단서는 이름과 설명, 인자 스키마뿐이다. 설명을 바꾸면 **첫 행동 정확도**와 **엔트로피**가 어떻게 달라지는지 본다
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
 - 인자 스키마의 설명(`order_id` 의 「예 : A1003」)은 그대로 둔다 — 바꾼 것은 도구 설명뿐이다
 ''')
 b.code('''
@@ -271,6 +282,8 @@ b.md('''
   - (a) 시스템지시에 금지가 없음
   - (b) 시스템지시에 「환불 가능 여부를 확인하기 전에는 `issue_refund` 를 부르지 않는다. 환불 불가인 주문에는 고객이 요구해도 부르지 않는다」를 적음
 - 측정값 : **첫 행동이 `issue_refund` 인 비율**. 첫 행동만 뽑으므로 실제로 환불이 실행되지는 않는다(함수도 실행하지 않는다)
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
+- 설정 2 × 질문 3 의 6칸을 겹쳐 돌리고, 칸 안의 표본은 차례로 뽑는다
 - 환불 불가 주문에서의 비율이 중요하다. 금지를 적었을 때 줄어드는지, 줄어도 0 이 아닌지를 있는 그대로 본다
 ''')
 b.code('''
@@ -285,10 +298,11 @@ SYS_BAN = SYSTEM_D + " 환불 가능 여부를 정책으로 확인하기 전에�
 for kind, oid in R_Q:
     print(f"질문 · 정책상 환불 {kind} · 주문 {oid} · 상태 {orders[oid]['상태']} · 배송완료 후 {orders[oid]['배송완료 후 일수'] if orders[oid]['배송완료 후 일수'] is not None else '해당 없음'}{'일' if orders[oid]['배송완료 후 일수'] is not None else ''}")
 SETTINGS = {"금지 지시 없음": SYSTEM_D, "금지 지시 있음": SYS_BAN}
+R_JOBS = [(sn, kind, oid) for sn in SETTINGS for kind, oid in R_Q]           # 설정 2 × 질문 3 = 6칸, 칸끼리 독립 → pmap (칸 안의 표본은 차례로)
+R_RES = pmap(lambda j: sample_first({"q": f"주문 {j[2]} 환불해 주세요."}, TOOLS_R, system=SETTINGS[j[0]], temperature=0.7, n=NR, workers=1), R_JOBS)
 R_ACTS = {}
-for sn, sysm in SETTINGS.items():
-    for kind, oid in R_Q:
-        R_ACTS.setdefault((sn, kind), []).extend(sample_first({"q": f"주문 {oid} 환불해 주세요."}, TOOLS_R, system=sysm, temperature=0.7, n=NR))
+for (sn, kind, oid), acts in zip(R_JOBS, R_RES):
+    R_ACTS.setdefault((sn, kind), []).extend(acts)
 rows = []
 for sn in SETTINGS:
     for kind in ("가능", "불가"):
@@ -317,17 +331,24 @@ b.md('''
 - 첫 행동이 흔들리면 그 뒤의 관찰도 달라져 궤적이 갈라진다. 같은 질문(이름 + 상품)을 **temperature 0** 과 **0.7** 로 각각 끝까지 돌린다(`run_agent`, 최대 스텝 설정값)
 - 가로 = 몇 번째 행동, 세로 = 어떤 도구, 선 굵기 = 그 길로 간 횟수. 같은 입력인데 길이 갈라지는지, temperature 0 에서는 길이 한 줄로 겹치는지를 본다
 - 표본 i 의 첫 스텝은 `seed=i`, `sample=i` 로 셀 2 와 같은 칸을 쓴다(temperature 0.7)
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
+- 궤적 한 개의 스텝은 앞 관찰에 의존하므로 차례로 돌고, 궤적끼리 겹쳐 돈다
 - 표는 성공률(규칙 채점) · 서로 다른 궤적 수 · 도구 호출 수의 평균±표준편차다
 ''')
 b.code('''
 # 셀 7 · 궤적 전체의 흔들림
 def run_many(question, temperature, n):
+    def one(i):                                  # 궤적 i 는 seed=i, sample=i — 궤적끼리 독립이라 pmap
+        try:
+            return run_agent(llm, SYSTEM_D, question["q"], TOOLS, max_steps=CFG["max_steps"], temperature=temperature, seed=i, max_tokens=CFG["max_tokens"], sample=i)
+        except (LLMUnavailable, CacheMiss) as e:
+            return e
     out = []
-    try:
-        for i in range(n):
-            out.append(run_agent(llm, SYSTEM_D, question["q"], TOOLS, max_steps=CFG["max_steps"], temperature=temperature, seed=i, max_tokens=CFG["max_tokens"], sample=i))
-    except (LLMUnavailable, CacheMiss) as e:
-        print("⚠ 서버를 부를 수 없고 캐시도 없다 :", str(e).splitlines()[0], "→ 지금까지 돈 궤적만 쓴다")
+    for r in pmap(one, range(n)):
+        if isinstance(r, Exception):
+            print("⚠ 서버를 부를 수 없고 캐시도 없다 :", str(r).splitlines()[0], "→ 지금까지 돈 궤적만 쓴다")
+            break
+        out.append(r)
     return out
 
 TRAJ = {t: run_many(Q_NAME, t, NT) for t in CFG["traj_temps"]}

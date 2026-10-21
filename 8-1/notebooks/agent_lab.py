@@ -10,6 +10,7 @@ import math
 import os
 import random
 import re
+import threading
 import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor
@@ -26,8 +27,9 @@ from matplotlib import font_manager
 from matplotlib.patches import FancyBboxPatch
 
 HERE = Path(__file__).resolve().parent
-CACHE_DIR = HERE / "cache"        # LM Studio 응답 캐시(강사 실행 결과를 함께 둔다 — 서버 없이 재생할 때 쓴다)
-RESULT_DIR = HERE / "results"     # 노트북이 쓴 핵심 숫자 · 그림(.gitignore)
+_CNT_LOCK = threading.Lock()      # 병렬 호출에서 LLM 호출 횟수 집계가 어긋나지 않게
+CACHE_DIR = Path(os.environ.get("AGENT_CACHE_DIR") or HERE / "cache")        # LM Studio 응답 캐시(강사 실행 결과를 함께 둔다 — 서버 없이 재생할 때 쓴다)
+RESULT_DIR = Path(os.environ.get("AGENT_RESULT_DIR") or HERE / "results")     # 노트북이 쓴 핵심 숫자 · 그림(.gitignore)
 
 _have = {f.name for f in font_manager.fontManager.ttflist}
 plt.rcParams.update({"font.family": [f for f in ("NanumGothic", "NanumBarunGothic", "Malgun Gothic") if f in _have] or ["DejaVu Sans"],
@@ -149,7 +151,8 @@ class LLM:
         payload.update(extra)
         path = self._path(payload, sample)
         if self.mode != "live" and path.exists():
-            self.n_cache += 1
+            with _CNT_LOCK:
+                self.n_cache += 1
             r = Reply(**json.loads(path.read_text(encoding="utf-8"))["reply"])
             r.cached = True
             return self._check(r)
@@ -185,7 +188,8 @@ class LLM:
                   latency=dt, finish_reason=j["choices"][0].get("finish_reason", ""), cached=False, reasoning=reasoning)
         self.dir.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"payload": payload, "sample": sample, "reply": r.__dict__}, ensure_ascii=False), encoding="utf-8")
-        self.n_live += 1
+        with _CNT_LOCK:
+            self.n_live += 1
         return self._check(r)
 
 
@@ -292,6 +296,17 @@ def parallel_map(trace, name, fn, items, max_workers=4):
         return list(ex.map(lambda ia: fn(ia[0], ia[1], stage), enumerate(items)))
 
 
+def pmap(fn, items, workers=None):
+    """items 의 각 원소에 fn(item) 을 동시에 돌려 같은 순서의 결과 목록을 돌려준다(서로 독립인 실행을 겹쳐 돌릴 때).
+    동시에 돌리는 수는 workers, 없으면 환경변수 AGENT_WORKERS(기본 4) — LM Studio 의 「최대 동시 예측」 값에 맞춘다.
+    서버가 동시 요청을 하나씩만 처리하면 빨라지지 않는다. 결과 순서는 입력 순서 그대로다"""
+    workers = workers or int(os.environ.get("AGENT_WORKERS", "4"))
+    if workers <= 1:
+        return [fn(x) for x in items]
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        return list(ex.map(fn, items))
+
+
 # ───────────────────────── 도구 루프 ─────────────────────────
 @dataclass
 class Tool:
@@ -335,7 +350,7 @@ def run_agent(client, system, user, tools, max_steps=8, temperature=0.0, seed=0,
     steps, final, stopped = [], "", "max_steps"
     for i in range(max_steps):
         r = trace.llm(client, f"LLM {i + 1}", msgs, tools=schemas, temperature=temperature, seed=seed, max_tokens=max_tokens, sample=sample)
-        st = {"i": i + 1, "thought": r.content, "calls": [], "prompt_tokens": r.prompt_tokens, "completion_tokens": r.completion_tokens, "dur": r.latency,
+        st = {"i": i + 1, "thought": r.content, "reasoning": getattr(r, "reasoning", "") or "", "calls": [], "prompt_tokens": r.prompt_tokens, "completion_tokens": r.completion_tokens, "dur": r.latency,
               "ctx_msgs": len(msgs), "ctx_chars": sum(len(str(m.get("content") or "")) for m in msgs)}
         steps.append(st)
         if not r.tool_calls:

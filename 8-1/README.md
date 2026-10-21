@@ -38,7 +38,8 @@ docker compose up -d       # http://localhost:8888 → 8-1/notebooks 를 연다.
 | 변수 | 뜻 | 기본 |
 |---|---|---|
 | `LMSTUDIO_URL` | 서버 주소. 컨테이너에서는 `host.docker.internal` 로 호스트에 닿는다 (강사 PC 는 포트 12345) | `http://host.docker.internal:1234/v1` |
-| `AGENT_MODEL` | LM Studio 의 모델 식별자 | 비우면 노트북 기본값 |
+| `AGENT_MODEL` | LM Studio 의 모델 식별자. **서버에 로드된 모델 이름을 적는다** — 비우면 `qwen3.5-4b-mtp` 를 요청하는데, 로드되지 않은 모델이면 LM Studio 의 자동 로드(JIT) 설정에 따라 의도치 않은 GPU 에 올라갈 수 있다 | 비우면 노트북 기본값 |
+| `AGENT_WORKERS` | 노트북 안의 서로 독립인 반복 실행을 동시에 돌리는 수. LM Studio 의 「최대 동시 예측」 값(기본 4)에 맞춘다. 겹쳐 돌면 호출 지연 값이 단독 실행보다 길게 나온다 | `4` |
 | `AGENT_MODE` | `auto`(캐시에 있으면 재생 · 없으면 호출) · `live`(항상 호출) · `replay`(캐시만, 서버 없이) | `auto` |
 | `AGENT_MIN_TOKENS` | 생각을 먼저 쓰는 모델이 답이 빈 채로 잘릴 때 `max_tokens` 하한(예: 4096). 느려진다 | `0` |
 
@@ -51,7 +52,7 @@ docker compose up -d       # http://localhost:8888 → 8-1/notebooks 를 연다.
 - **생각 모델**: 생각 토큰이 `max_tokens` 를 먼저 쓰면 답이 빈 문자열로 온다. 노트북이 잘림 경고를 출력한다. 모델 쪽 생각 끄기 옵션(`reasoning_effort` 등)은 시험한 서버에서 효과가 없었다 → `AGENT_MIN_TOKENS` 로 대응.
 - **logprobs 미지원**: 시험한 서버는 응답에 logprobs 가 없다. 03 은 표본 빈도로 분포를 추정한다.
 - **06**: `edit_file` 은 문자열 치환이라 들여쓰기 오류가 날 수 있다. 연습용 샌드박스는 악성 코드를 막지 못한다 — 신뢰하는 코드에만 쓴다.
-- **측정값 없음**: 실제 모델의 측정 결과는 아직 이 문서에 없다. 아래 「강사용」의 dry 모드 숫자는 의미가 없다.
+- **측정값은 모델마다 다르다**: 이 문서에는 숫자를 적지 않는다. 표본이 작은 실습(05 · 06)은 한 건이 비율을 크게 움직이므로 결과 장의 값은 모델 · 설정 · 표본 수와 함께 읽는다. 아래 「강사용」의 dry 모드 숫자는 의미가 없다.
 
 ## 강사용
 
@@ -72,4 +73,4 @@ dry 모드: 환경변수 `AGENT_DRY=NN`, 또는 JupyterLab 화면에서 시험�
 |---|---|---|
 | 01~05 | dry nbconvert + 실제 Chrome JupyterLab 전체 실행(통합 환경 이전의 8894 컨테이너) | 오류 0, 그림 렌더 확인(01=3 · 02=7 · 03=5 · 04=5 · 05=8) |
 | 06 | dry nbconvert + 통합 환경(8888) Chrome 전체 실행 | 오류 0, 그림 5장 렌더(픽셀 검사), 채점기 자체 점검 15/15. 기록: [이슈 #3 댓글](https://github.com/hikaMaeng/-ai-/issues/3#issuecomment-6260209246) |
-| 실제 LLM | — | 미측정 |
+| 실제 LLM | LM Studio `gemma-4-12b-it-qat:tr` · `AGENT_MIN_TOKENS=1536` · `AGENT_WORKERS=4` 로 01~06 nbconvert 전체 실행(2026-10-21, 컨테이너 안) | 오류 0. 이 모델에서 나온 숫자는 `notebooks/results/measured_NN.json` 에 있고(gitignore), 응답 캐시는 `notebooks/cache/gemma-4-12b-it-qat_tr/` 에 쌓인다. 모델을 바꾸면 값이 달라진다 |

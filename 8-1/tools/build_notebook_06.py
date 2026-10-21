@@ -45,7 +45,7 @@ Observation: PASS (12/12)
 
 - 실행 : 셀 2 ~ 4 는 서버 없이 돈다(샌드박스 · 도구 · 채점기는 진짜로 돈다). 셀 5 ~ 9 는 LM Studio 서버가 켜져 있고 도구 호출이 되는 모델이 로드되어 있어야 한다(없으면 `AGENT_MODE=replay` 로 강사 실행 결과를 재생). 시드 · 표본 수 · 온도 같이 결과를 바꾸는 설정은 모두 출력에 찍는다
 - **이 노트북은 모델이 고친 코드를 실제로 실행한다.** 컨테이너 안에서, 실행마다 새 임시 폴더를 만들고, 서브프로세스와 시간 제한으로 가둔다. 이것은 실수(무한 반복 · 경로 이탈)를 막는 장치이지 악의적인 코드를 막는 장치가 아니다. 컨테이너 밖의 내 PC 에서 직접 돌리지 않는다
-- 같은 질문을 온도 > 0 으로 여러 번 돌릴 때는 표본 번호(`sample`)마다 캐시 칸이 다르다. 같은 표본 번호는 같은 응답을 쓴다
+- 같은 질문을 온도 > 0 으로 여러 번 돌릴 때는 표본 번호 i 마다 `seed` = 기준 시드 + i 로 서버의 표본 추출을 바꾸고(시드가 같으면 같은 답이 반복될 수 있다), `sample=i` 로 캐시 칸도 나눈다. 같은 표본 번호는 같은 응답을 쓴다
 - **결과가 기대와 달라도 그대로 남긴다.** 숫자가 말하는 것은 이 모델 · 이 설정 · 이 표본 수에서 본 것뿐이다
 ''')
 
@@ -59,12 +59,16 @@ b.md(r'''
 b.code(r'''
 # 셀 1 · 설정
 import sys, json, time, re, os, shutil, tempfile, subprocess, difflib, atexit, dataclasses
+try:
+    import resource                    # 시험 서브프로세스의 자원 제한용. 스레드가 도는 중에 자식 프로세스 안에서 처음 가져오지 않도록 미리 가져온다
+except ImportError:
+    pass
 from pathlib import Path
 sys.path.insert(0, ".")
 from agent_lab import *
 from agent_tasks import *
 
-CFG = dict(n_runs=6, max_steps=12, max_tokens=800, temperature=0.6, seed=0, trace_temperature=0.0, trace_sample=0, test_timeout=20, min_factor=2)
+CFG = dict(n_runs=12, max_steps=12, max_tokens=800, temperature=0.6, seed=0, trace_temperature=0.0, trace_sample=0, test_timeout=20, min_factor=2)
 llm = LLM()          # 주소 · 모델은 환경변수(LMSTUDIO_URL · AGENT_MODEL)에서 읽는다
 BUG_NAMES = ["게스트", "경계값", "반올림"]
 
@@ -594,7 +598,7 @@ print(f"\n채점기 점검 : {len(GR)}건 모두 기대한 판정과 일치 (통
 b.md(r'''
 ### 셀 5 · 한 궤적 따라가기
 - `run_agent` 로 게스트 버그를 고치게 한다(온도 0). 끝난 뒤 궤적을 강의 장표와 같은 모양으로 출력한다. **Thought** = 그 스텝에서 모델이 쓴 글(`assistant.content`), **Action** = 도구 호출, **Observation** = 도구 결과(시험 로그가 여기에 들어온다)
-- 모델이 글 없이 바로 호출만 하면 Thought 는 비어 있다. 그대로 비어 있다고 적는다
+- 모델이 글 없이 바로 호출만 하면 본문 Thought 는 비어 있다. 생각 토큰(`reasoning_content`)으로 추론하는 모델이면 그 앞부분을 「(생각)」으로 대신 보여 주고, 둘 다 없으면 비어 있다고 적는다
 - 그림은 `draw_trajectory` 다. 붉은 칸은 `FAIL` 이거나 오류인 관찰이다
 - 끝난 뒤 **숨은 확인**으로 코드가 성공을 채점한다. 모델이 「고쳤다」고 한 것과 채점 결과가 같은지 본다
 - 이 셀에서 한 번의 실행을 감싸는 함수 `run_one` 도 만든다(샌드박스 만들기 → 도구 → 루프 → 숨은 확인 → 지표). 아래 셀들이 이 함수를 쓴다
@@ -688,7 +692,7 @@ def run_one(bug, tests=True, gate=False, i=0, temperature=None):
     base = project_files(bug)
     with Sandbox(base) as sb:
         runner = run_gated if gate else run_agent
-        traj = runner(llm, system_for(tests), BUGS[bug]["task"], make_tools(sb, tests), max_steps=CFG["max_steps"], temperature=temperature, seed=CFG["seed"], max_tokens=CFG["max_tokens"], sample=i)
+        traj = runner(llm, system_for(tests), BUGS[bug]["task"], make_tools(sb, tests), max_steps=CFG["max_steps"], temperature=temperature, seed=CFG["seed"] + i, max_tokens=CFG["max_tokens"], sample=i)
         row = analyze(traj, sb, bug, base, tests, gate, i)
     row["traj"] = traj
     return row
@@ -698,7 +702,10 @@ def show_tao(traj, goal, obs_chars=300):
     """궤적을 강의 장표와 같은 모양으로 출력한다"""
     print("[목표]", goal)
     for st in traj.steps:
-        th = re.sub(r"\s+", " ", st["thought"]).strip() or "(글 없이 바로 호출)"
+        th = re.sub(r"\s+", " ", st["thought"]).strip()
+        if not th and st.get("reasoning"):                      # 모델이 글 대신 생각 토큰으로 추론했으면 그 앞부분을 Thought 로 보여 준다
+            th = "(생각) " + re.sub(r"\s+", " ", st["reasoning"]).strip()[:160]
+        th = th or "(글 없이 바로 호출)"
         if not st["calls"]:
             print(f"Thought: {th}\n  → 도구 호출 없음 = 최종 답으로 끝")
             continue
@@ -745,6 +752,7 @@ except (LLMUnavailable, CacheMiss) as e:
 # ───────────────────────── 셀 6 ─────────────────────────
 b.md(r'''
 ### 셀 6 · 실패 로그가 수정 범위를 좁히는가(반성)
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
 - 같은 게스트 과제를 `n_runs` 번 돌린다(표본 번호 0, 1, … · 온도 `temperature`). 한 번마다 새 샌드박스다
 - 측정하는 것
   - **본 파일 수(첫 시험 뒤)** : 첫 `run_tests` 이후 `read_file` 로 연 서로 다른 파일 수. 프로젝트의 소스는 4개다. `grep` 결과에 이름만 나온 파일은 세지 않는다
@@ -794,7 +802,7 @@ if ONE is None:
 else:
     try:
         t0 = time.time()
-        RA = [run_one("게스트", True, i=i) for i in range(CFG["n_runs"])]
+        RA = pmap(lambda i: run_one("게스트", True, i=i), range(CFG["n_runs"]))        # 표본마다 새 샌드박스 · 서로 독립 → 겹쳐 돈다(결과는 표본 번호 순서)
         print(f"게스트 버그 · run_tests 있음 · {len(RA)}번 (온도 {CFG['temperature']} · 시드 {CFG['seed']} · 표본 0..{len(RA) - 1}) · {time.time() - t0:.0f}초 · 서버 호출 {llm.n_live}번 · 캐시 {llm.n_cache}번")
         print(table(RA, COLS6).to_string(index=False))
         SA = summ(RA)
@@ -822,6 +830,7 @@ else:
 # ───────────────────────── 셀 7 ─────────────────────────
 b.md(r'''
 ### 셀 7 · 검증 신호가 없으면
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
 - 같은 게스트 과제 · 같은 `n_runs` · 같은 온도로 도구 세트에서 `run_tests` 만 뺀다(`grep` · `read_file` · `edit_file`). 시스템 지시도 「시험을 실행할 수 없다」로 바뀐다. 모델은 코드를 읽고 판단해 고치고 스스로 끝낸다
 - 비교하는 것 : 숨은 확인 통과율 · 스텝 수 · **거짓 완료**(모델이 스스로 끝냈는데 숨은 확인이 통과가 아닌 비율)
 - 「검증 신호가 있으면 루프가 스스로 수렴한다」가 숫자로 나오는지 본다. 표본이 작으므로 차이가 우연의 폭 안인지도 함께 본다. 시험이 있는 쪽에도 거짓 완료가 남을 수 있다 — 보이는 시험이 숨은 시험보다 약하기 때문이다. 있으면 있는 그대로 남긴다
@@ -834,7 +843,7 @@ if RA is None:
 else:
     try:
         t0 = time.time()
-        RB = [run_one("게스트", False, i=i) for i in range(CFG["n_runs"])]
+        RB = pmap(lambda i: run_one("게스트", False, i=i), range(CFG["n_runs"]))       # 표본마다 새 샌드박스 · 서로 독립 → 겹쳐 돈다(결과는 표본 번호 순서)
         print(f"게스트 버그 · run_tests 없음 · {len(RB)}번 (온도 {CFG['temperature']} · 시드 {CFG['seed']}) · {time.time() - t0:.0f}초 · 서버 호출 {llm.n_live}번 · 캐시 {llm.n_cache}번")
         print(table(RB, ["i", "판정", "스텝", "토큰", "본 파일(첫 시험 뒤)", "수정 횟수", "수정 줄", "최소 수정", "끝낸 쪽", "거짓 완료"]).to_string(index=False))
         S = {"run_tests 있음": summ(RA), "run_tests 없음": summ(RB)}
@@ -858,6 +867,7 @@ else:
 # ───────────────────────── 셀 8 ─────────────────────────
 b.md(r'''
 ### 셀 8 · 버그 세 종류
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
 - 게스트 `None`(강의의 것) · 할인율 경계값(off-by-one) · 반올림 오류. 버그마다 시험 · 정답 패치 · 숨은 시험은 셀 2 에 정의되어 있다. 게스트는 셀 6 의 실행을 그대로 쓰고, 나머지 두 버그를 `n_runs` 번씩 돌린다(모두 `run_tests` 있음 · 같은 온도)
 - 표 : 숨은 확인의 통과 · 부분 · 실패 비율, 스텝 수, 토큰, 최소 수정 비율, 거짓 완료 비율. 어느 버그가 더 어려운지 · 스텝이 더 드는지는 숫자를 보고 판단한다
 ''')
@@ -870,8 +880,10 @@ else:
     try:
         t0 = time.time()
         RALL = {"게스트": RA}
+        jobs8 = [(bug, i) for bug in BUG_NAMES[1:] for i in range(CFG["n_runs"])]            # 버그 × 표본 번호 : 모두 서로 독립
+        res8 = pmap(lambda j: run_one(j[0], True, i=j[1]), jobs8)                            # 겹쳐 돌되 결과는 입력 순서 그대로
         for bug in BUG_NAMES[1:]:
-            RALL[bug] = [run_one(bug, True, i=i) for i in range(CFG["n_runs"])]
+            RALL[bug] = [r for (b_, _), r in zip(jobs8, res8) if b_ == bug]
         print(f"버그 {len(RALL)}종 × {CFG['n_runs']}번 (온도 {CFG['temperature']} · 시드 {CFG['seed']}) · {time.time() - t0:.0f}초 · 서버 호출 {llm.n_live}번 · 캐시 {llm.n_cache}번")
         SB = {b_: summ(v) for b_, v in RALL.items()}
         T8 = pd.DataFrame({b_: {"정답 패치 줄": REF_LINES[b_], "깨지는 시험(원래)": len(TARGETS[b_]), "통과율": s["통과율"], "부분율": s["부분율"], "실패율": s["실패율"],
@@ -894,6 +906,7 @@ else:
 # ───────────────────────── 셀 9 ─────────────────────────
 b.md(r'''
 ### 셀 9 · 종료 조건 — 코드가 끝내는 루프 vs 모델이 끝내는 루프
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
 - **모델 종료 루프** : `run_agent`. 모델이 도구 호출 없이 글만 내면 끝난다. 시스템 지시에 「시험이 모두 통과하면 끝낸다」고 적어 두었을 뿐, 끝낼지는 모델이 정한다
 - **코드 종료 루프** : `run_gated`(셀 5). `run_tests` 가 `PASS` 를 돌려주면 모델이 답하기 전에 코드가 끊는다. 종료 조건이 「시험 통과」 그 자체다
 - 두 루프는 같은 질문 · 같은 표본 번호를 쓰므로 통과를 보는 시점까지는 같은 응답(같은 궤적)을 쓴다. 그래서 차이는 **통과 뒤**에서만 생긴다 : 통과 뒤 모델이 하는 호출(최종 답 · 추가 행동)의 몫이다. 통과 전에 모델이 스스로 끝낸 경우는 두 루프가 같다
@@ -908,7 +921,9 @@ else:
     try:
         t0 = time.time()
         ME = [r for b_ in BUG_NAMES for r in RALL[b_]]
-        CE = [run_one(b_, True, gate=True, i=i) for b_ in BUG_NAMES for i in range(CFG["n_runs"])]
+        # 모델 종료 루프(ME)는 셀 8 에서 이미 끝났다. 코드 종료 루프는 그 캐시를 다시 쓰므로 그 뒤에 돌린다(두 루프 사이는 직렬, 각 루프 안은 병렬)
+        jobs9 = [(b_, i) for b_ in BUG_NAMES for i in range(CFG["n_runs"])]
+        CE = pmap(lambda j: run_one(j[0], True, gate=True, i=j[1]), jobs9)
         GATE = {"모델 종료": ME, "코드 종료": CE}
         print(f"세 버그 × {CFG['n_runs']}번씩 두 루프 (온도 {CFG['temperature']} · 시드 {CFG['seed']}) · {time.time() - t0:.0f}초 · 서버 호출 {llm.n_live}번 · 캐시 {llm.n_cache}번")
         SG = {k: summ(v) for k, v in GATE.items()}

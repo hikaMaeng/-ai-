@@ -213,6 +213,8 @@ b.md('''
 - 사슬 : 키 `K0` → `get(key)` 가 다음 키를 돌려주고, 지시한 횟수 n 만큼 따라간 마지막 값이 정답이다. 도구는 `get` 하나뿐이고 정답은 코드가 안다
 - 길이 n ∈ `lengths` 마다 서로 다른 사슬 `n_chains` 개. 사슬은 시드로 정해져 있어 다시 돌려도 같다. 온도 0 · 시드 고정
 - 채점 규칙 : 답에 나온 **마지막 키**가 정답이면 성공. 이 셀은 도구 호출 · 지시준수(횟수를 지킴) · 값 이어 가기를 한꺼번에 시험한다
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
+- 사슬 한 개의 스텝은 앞 관찰에 의존하므로 차례로 돌고, 사슬끼리 겹쳐 돈다
 - 한 사슬마다 기록하는 것 : 성공 여부 · 스텝 수 · 조회 횟수 · 오류 관찰 수 · **첫 이탈 위치**(모델이 부른 키가 처음으로 정답 경로에서 벗어난 번호)
 ''')
 b.code('''
@@ -222,27 +224,28 @@ ex = CHAINS[4][0]
 print("사슬 예(길이 4) :", " → ".join(ex["path"]), "| 정답", ex["answer"], "| 표에 든 키 수", len(ex["table"]))
 print("지시문 :", chain_user(4))
 
-def first_dev(ch, calls):
-    """모델이 부른 키가 정답 경로(K0, a1, a2, …)에서 처음 벗어난 번호(1부터). 벗어나지 않으면 None"""
+def first_dev(ch, calls, n):
+    """모델이 부른 키가 정답 경로(K0, a1, a2, …)에서 처음 벗어난 번호(1부터). 지시한 횟수 n 보다 일찍 끝났으면 빠진 첫 호출 번호. 벗어나지 않으면 None"""
     for i, key in enumerate(calls):
         if i >= len(ch["path"]) - 1 or key != ch["path"][i]:
             return i + 1
-    return None
+    return len(calls) + 1 if len(calls) < n else None
+
+def run_one(client, n, ch):
+    """사슬 하나를 끝까지 돌려 한 행을 돌려준다(사슬끼리 독립 — 부르는 쪽이 pmap 으로 겹쳐 돈다)"""
+    tr = run_agent(client, SYSTEM_CHAIN, chain_user(n), chain_tools(ch), max_steps=n + CFG["extra_steps"], temperature=CFG["temperature"], seed=CFG["seed"], max_tokens=CFG["max_tokens"])
+    keys = [str(c["args"].get("key")) for st in tr.steps for c in st["calls"]]
+    errs = sum(1 for st in tr.steps for c in st["calls"] if c["obs"].startswith("오류"))
+    return {"n": n, "성공": bool(score_chain(ch, tr.final)), "스텝": tr.n_steps, "조회": len(keys), "오류 관찰": errs, "첫 이탈": first_dev(ch, keys, n),
+            "끝난 이유": tr.stopped, "토큰": tr.trace.tokens, "traj": tr}
 
 def run_chains(client, n, chains):
-    out = []
-    for ch in chains:
-        tr = run_agent(client, SYSTEM_CHAIN, chain_user(n), chain_tools(ch), max_steps=n + CFG["extra_steps"], temperature=CFG["temperature"], seed=CFG["seed"], max_tokens=CFG["max_tokens"])
-        keys = [str(c["args"].get("key")) for st in tr.steps for c in st["calls"]]
-        errs = sum(1 for st in tr.steps for c in st["calls"] if c["obs"].startswith("오류"))
-        out.append({"n": n, "성공": bool(score_chain(ch, tr.final)), "스텝": tr.n_steps, "조회": len(keys), "오류 관찰": errs, "첫 이탈": first_dev(ch, keys),
-                    "끝난 이유": tr.stopped, "토큰": tr.trace.tokens, "traj": tr})
-    return out
+    return pmap(lambda ch: run_one(client, n, ch), chains)
 
 ROWS, CH = [], None
 try:
-    for n in CFG["lengths"]:
-        ROWS += run_chains(llm, n, CHAINS[n])
+    jobs = [(n, ch) for n in CFG["lengths"] for ch in CHAINS[n]]          # 길이 순서 · 사슬 순서 그대로, 서로 독립이라 한꺼번에 pmap
+    ROWS = pmap(lambda j: run_one(llm, j[0], j[1]), jobs)
     CH = pd.DataFrame([{k: v for k, v in r.items() if k != "traj"} for r in ROWS])
     print(f"\\n모델 {llm.model} · 사슬 {len(CH)}개 실행 (서버 호출 {llm.n_live}번 · 캐시 {llm.n_cache}번)")
     print(CH.groupby("n").agg(성공=("성공", "sum"), 사슬=("성공", "size"), 평균_스텝=("스텝", "mean"), 평균_조회=("조회", "mean"), 평균_오류관찰=("오류 관찰", "mean")).to_string(float_format=lambda v: f"{v:.2f}"))
@@ -324,6 +327,7 @@ b.md('''
   - **첫 행동 정확도** : 과제 D 의 「주문번호」 · 「이름+상품」 질문에서 첫 도구 호출이 정답 도구인 비율(주문번호 → `lookup_order`, 이름+상품 → `search_customer`)
   - **길이 8 연쇄 성공률** : 셀 4 와 같은 규칙으로 채점
 - **모델은 한 번에 하나만 서버에 로드된다.** 다른 크기의 모델을 보려면 LM Studio 에서 모델을 바꿔 로드한 뒤 이 셀을 다시 돌린다 — 응답은 모델 이름별 `cache/` 폴더에 쌓이고, 이미 쌓인 모델만 다음 셀의 표에 들어간다
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
 - 모델 이름은 환경변수 `AGENT_MODEL` 로 바꾼다(LM Studio 에 로드한 이름과 같아야 한다). 이 셀은 캐시에 있으면 서버를 부르지 않는다
 ''')
 b.code('''
@@ -343,16 +347,17 @@ def valid_call(rep, tools):
 
 def measure_model(client):
     schemas_D = [t.schema() for t in TOOLS_D]
-    valid, first = [], []
-    for q in QD:
+    def first_q(q):                                  # 첫 행동 시험 질문 하나 (질문끼리 독립)
         r = client.chat([{"role": "system", "content": SYSTEM_D}, {"role": "user", "content": q["q"]}], tools=schemas_D, temperature=CFG["temperature"], seed=CFG["seed"], max_tokens=CFG["max_tokens"])
-        valid.append(valid_call(r, TOOLS_D))
         want = "lookup_order" if q["유형"] == "주문번호" else "search_customer"
-        first.append(bool(r.tool_calls) and r.tool_calls[0]["name"] == want)
-    for ch in CHAINS[N_CMP]:
+        return valid_call(r, TOOLS_D), bool(r.tool_calls) and r.tool_calls[0]["name"] == want
+    def first_chain(ch):                             # 사슬의 첫 호출 하나 (사슬끼리 독립)
         r = client.chat([{"role": "system", "content": SYSTEM_CHAIN}, {"role": "user", "content": chain_user(N_CMP)}], tools=[t.schema() for t in chain_tools(ch)],
                         temperature=CFG["temperature"], seed=CFG["seed"], max_tokens=CFG["max_tokens"])
-        valid.append(valid_call(r, chain_tools(ch)))
+        return valid_call(r, chain_tools(ch))
+    qres = pmap(first_q, QD)
+    valid = [v for v, _ in qres] + pmap(first_chain, CHAINS[N_CMP])
+    first = [f for _, f in qres]
     chain = run_chains(client, N_CMP, CHAINS[N_CMP])
     return {"유효한 도구 호출 비율": float(np.mean(valid)), "첫 행동 정확도": float(np.mean(first)), f"길이 {N_CMP} 연쇄 성공률": float(np.mean([r["성공"] for r in chain])),
             "호출 수(유효 판정)": len(valid), "첫 행동 질문 수": len(first), "사슬 수": len(chain)}

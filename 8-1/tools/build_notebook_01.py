@@ -61,6 +61,7 @@ b.md('''
 - 프롬프트 한 번 → 답 한 번. 경로를 사람이 고정한 가장 단순한 호출
 - 모델이 아는 것은 **학습한 지식**뿐이다. 이 가상 가게의 주문 DB와 환불 정책은 모른다 → 지어내거나 모른다고 답한다
 - 채점은 정답 금액이 답에 들어 있는지 규칙으로 본다
+- 모델에 따라 도구를 주지 않았는데도 도구 호출처럼 보이는 글(`<tool_call>` 같은 표기)을 답으로 내기도 한다. 이것도 답이 아니므로 실패로 채점한다
 ''')
 b.code('''
 # 셀 2 · 단발 호출
@@ -213,18 +214,19 @@ plt.tight_layout(); plt.show()
 b.md('''
 ### 셀 10 · 단발 vs 루프 — 같은 질문 8개를 측정한다
 - 같은 모델 · 같은 8개 질문을 **도구 없이 한 번**(단발)과 **도구 + 루프**로 각각 푼다
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
 - 성공은 정답 금액 · 판정이 답에 들어 있는지 규칙으로 본다. 토큰 · 지연은 호출 전체의 합이다(캐시된 응답은 처음 호출했을 때 측정한 값)
 - 루프가 더 정확한 대신 더 비싸다는 것이 숫자로 나오는지 본다. **기대와 달라도 그대로 남긴다**
 ''')
 b.code('''
 # 셀 10 · 단발 vs 루프 — 질문 8개
-rows = []
-for q in QS1:
+def one(q):
     m0 = [{"role": "system", "content": SYSTEM_D}, {"role": "user", "content": q["q"]}]
     r0 = llm.chat(m0, max_tokens=CFG["max_tokens"])
     tr = run_agent(llm, SYSTEM_D, q["q"], TOOLS, max_steps=CFG["max_steps"], max_tokens=CFG["max_tokens"])
-    rows.append({"질문": q["oid"], "단발 성공": score_D(q, r0.content)["성공"], "루프 성공": score_D(q, tr.final)["성공"], "단발 토큰": r0.tokens, "루프 토큰": tr.trace.tokens,
-                 "루프 호출": tr.trace.llm_calls, "단발 지연": r0.latency, "루프 지연": tr.trace.latency, "끝난 이유": tr.stopped})
+    return {"질문": q["oid"], "단발 성공": score_D(q, r0.content)["성공"], "루프 성공": score_D(q, tr.final)["성공"], "단발 토큰": r0.tokens, "루프 토큰": tr.trace.tokens,
+            "루프 호출": tr.trace.llm_calls, "단발 지연": r0.latency, "루프 지연": tr.trace.latency, "끝난 이유": tr.stopped}
+rows = pmap(one, QS1)          # 질문 8개는 서로 독립 → 겹쳐 돌린다(결과는 질문 순서 그대로)
 df = pd.DataFrame(rows)
 print(df.to_string(index=False, float_format=lambda v: f"{v:.1f}"))
 S = {"단발 성공률": df["단발 성공"].mean(), "루프 성공률": df["루프 성공"].mean(), "단발 평균 토큰": df["단발 토큰"].mean(), "루프 평균 토큰": df["루프 토큰"].mean(),

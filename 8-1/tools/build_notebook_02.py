@@ -101,7 +101,7 @@ def wf_A(doc, tr=None):
     tr = tr or Trace()
     facts = ask(tr, "핵심 추출", f"다음 공지에서 핵심 사실(행사일 · 참가비 · 신청 마감일 · 정원)을 한 줄씩 추출해라.\\n\\n공지: {doc['text']}")
     brief = ask(tr, "개조식 요약", f"아래 원문을 개조식(짧은 항목 3~4개, 각 항목은 '- ' 로 시작)으로 요약해라. 숫자는 그대로 쓴다.\\n\\n원문: {facts}")
-    eng = ask(tr, "영어 번역", f"아래 원문을 영어로 번역해라. 숫자는 그대로 쓴다.\\n\\n원문: {brief}")
+    eng = ask(tr, "영어 번역", f"아래 원문을 영어로 번역해라. 숫자는 그대로 쓴다. 번역문만 출력하고 설명 · 선택지 · 한국어 문장은 덧붙이지 않는다.\\n\\n원문: {brief}")
     return eng, tr
 
 SPEC_A = spec_chain(["핵심 추출", "개조식 요약", "영어 번역"])
@@ -168,6 +168,7 @@ print("채점 :", score_C(m0, out))
 b.md('''
 ### 셀 6 · 워크플로우로 A · B · C 전체를 측정한다
 - 같은 코드를 모든 입력에 돌려 성공률 · LLM 호출 수 · 토큰 · 지연의 평균을 모은다
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
 - 워크플로우는 입력이 달라도 **호출 수가 같다**(A 3 · B 2 · C 4). 경로가 고정이기 때문이다
 ''')
 b.code('''
@@ -176,12 +177,13 @@ ROWS = []
 def add(과제, 방식, 성공, tr, **ex):
     ROWS.append({"과제": 과제, "방식": 방식, "성공": bool(성공), "호출": tr.llm_calls, "토큰": tr.tokens, "지연": tr.latency, **ex})
 
-for d in DOCS.values():
-    o, tr = wf_A(d); add("A 체이닝", "워크플로우", score_A(d, o)["성공"], tr)
-for it in INQ:
-    o, cat, tr = wf_B(it); add("B 라우팅", "워크플로우", score_B(it, o, routed=cat)["성공"], tr, 분류=(cat == it["label"]))
-for m in MEET:
-    o, tr = wf_C(m); add("C 병렬화", "워크플로우", score_C(m, o)["성공"], tr)
+# 입력마다 서로 독립이므로 pmap 으로 겹쳐 돌리고, 결과는 입력 순서대로 표에 쌓는다
+for d, (o, tr) in zip(DOCS.values(), pmap(wf_A, list(DOCS.values()))):
+    add("A 체이닝", "워크플로우", score_A(d, o)["성공"], tr)
+for it, (o, cat, tr) in zip(INQ, pmap(wf_B, INQ)):
+    add("B 라우팅", "워크플로우", score_B(it, o, routed=cat)["성공"], tr, 분류=(cat == it["label"]))
+for m, (o, tr) in zip(MEET, pmap(wf_C, MEET)):
+    add("C 병렬화", "워크플로우", score_C(m, o)["성공"], tr)
 df = pd.DataFrame(ROWS)
 print(df.groupby(["과제", "방식"]).agg(성공률=("성공", "mean"), 호출=("호출", "mean"), 토큰=("토큰", "mean"), 지연=("지연", "mean"), 건수=("성공", "size")).round(2).to_string())
 ''')
@@ -191,6 +193,7 @@ b.md('''
 - **같은 모델 · 같은 입력 · 같은 채점**이다. 다른 것은 경로를 누가 정하는가뿐이다
 - 에이전트에게는 단계를 알려 주지 않고 **목표와 도구**만 준다. A 는 문서를 읽는 도구, B 는 응대 규칙을 알려 주는 도구 세 개, C 는 회의록 구간을 읽는 도구
 - 에이전트가 **어떤 도구를 몇 번 부르는지는 모델이 정한다**. 워크플로우의 고정된 호출 수와 비교한다
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
 ''')
 b.code('''
 # 셀 7 · 같은 과제를 에이전트로
@@ -202,12 +205,13 @@ TOOL_A = [Tool("get_document", "공지 문서의 원문을 돌려준다.", {"pro
 def ag(system, user, tools, tr=None, **kw):
     return run_agent(llm, system, user, tools, max_steps=CFG["max_steps"], max_tokens=CFG["max_tokens"], trace=tr, **kw)
 
-for d in DOCS.values():
-    t = ag(SYS_A, f"문서 {d['id']} 를 처리해라.", TOOL_A); add("A 체이닝", "에이전트", score_A(d, t.final)["성공"], t.trace, 호출도구=len(t.calls))
-for it in INQ:
-    t = ag(SYS_B, f"문의: {it['text']}", tools_B()); add("B 라우팅", "에이전트", score_B(it, t.final)["성공"], t.trace, 분류=(t.calls[:1] == [B_TOOL_FOR[it["label"]]]), 호출도구=len(t.calls))
-for m in MEET:
-    t = ag(SYS_C, f"회의록 {m['id']} 를 정리해라.", tools_C(m)); add("C 병렬화", "에이전트", score_C(m, t.final)["성공"], t.trace, 호출도구=len(t.calls))
+# 입력마다 서로 독립 → pmap 으로 겹쳐 돌리고 결과는 입력 순서대로 쌓는다
+for d, t in zip(DOCS.values(), pmap(lambda d: ag(SYS_A, f"문서 {d['id']} 를 처리해라.", TOOL_A), list(DOCS.values()))):
+    add("A 체이닝", "에이전트", score_A(d, t.final)["성공"], t.trace, 호출도구=len(t.calls))
+for it, t in zip(INQ, pmap(lambda it: ag(SYS_B, f"문의: {it['text']}", tools_B()), INQ)):
+    add("B 라우팅", "에이전트", score_B(it, t.final)["성공"], t.trace, 분류=(t.calls[:1] == [B_TOOL_FOR[it["label"]]]), 호출도구=len(t.calls))
+for m, t in zip(MEET, pmap(lambda m: ag(SYS_C, f"회의록 {m['id']} 를 정리해라.", tools_C(m)), MEET)):
+    add("C 병렬화", "에이전트", score_C(m, t.final)["성공"], t.trace, 호출도구=len(t.calls))
 df = pd.DataFrame(ROWS)
 g = df.groupby(["과제", "방식"]).agg(성공률=("성공", "mean"), 호출=("호출", "mean"), 토큰=("토큰", "mean"), 지연=("지연", "mean"), 건수=("성공", "size")).round(2)
 print(g.to_string())
@@ -226,6 +230,7 @@ b.md('''
 ### 셀 8 · 과제 D — 고정 경로가 막히는 곳
 - 질문마다 **필요한 조회 순서가 다르다** : 주문번호가 주어지면 「조회 → 정책 → 계산」이면 되지만, 이름과 상품만 주어지면 「고객 검색 → 주문 조회 → …」, 한 고객의 모든 주문을 합하라면 조회 횟수 자체가 달라진다
 - 워크플로우로 푼다면 : ⓐ 질문에서 주문번호 추출(LLM) → ⓑ 주문 조회(코드) → ⓒ 정책에 따라 판정(LLM). 주문번호가 없는 질문은 이 경로로 **갈 수 없다**
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
 - 이 경로를 확장해 이름 · 합계 질문도 처리하려면 분기를 더 설계해야 한다(확인 질문)
 ''')
 b.code('''
@@ -245,8 +250,7 @@ def wf_D(q, tr=None, sample=0, temperature=0.0):
     return ans, tr, ("추출", "조회", "판정", "끝")
 
 RD = []
-for q in QD:
-    a, tr, path = wf_D(q)
+for q, (a, tr, path) in zip(QD, pmap(wf_D, QD)):          # 질문 18개는 서로 독립 → 겹쳐 돌린다
     RD.append({"유형": q["유형"], "방식": "워크플로우", "성공": score_D(q, a)["성공"], "호출": tr.llm_calls, "토큰": tr.tokens, "지연": tr.latency})
     add("D 개방형", "워크플로우", score_D(q, a)["성공"], tr)
 dw = pd.DataFrame(RD)
@@ -257,14 +261,14 @@ print(f"\\n워크플로우 전체 성공률 {dw['성공'].mean():.2f} — 경로
 b.md('''
 ### 셀 9 · 과제 D 를 에이전트로 — 유형별 성공률 비교
 - 같은 18개 질문을 도구 네 개(`lookup_order` · `search_customer` · `get_policy` · `calc`)와 루프로 푼다
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
 - 질문마다 모델이 **스스로** 도구와 순서를 정한다. 아래 표의 유형별 성공률을 워크플로우와 나란히 본다
 ''')
 b.code('''
 # 셀 9 · 과제 D 를 에이전트로
 TD = tools_D(orders, cust)
 TRAJ_D = []
-for q in QD:
-    t = ag(SYSTEM_D, q["q"], TD)
+for q, t in zip(QD, pmap(lambda q: ag(SYSTEM_D, q["q"], TD), QD)):     # 질문 18개는 서로 독립 → 겹쳐 돌린다
     TRAJ_D.append((q, t))
     RD.append({"유형": q["유형"], "방식": "에이전트", "성공": score_D(q, t.final)["성공"], "호출": t.trace.llm_calls, "토큰": t.trace.tokens, "지연": t.trace.latency})
     add("D 개방형", "에이전트", score_D(q, t.final)["성공"], t.trace, 호출도구=len(t.calls))
@@ -285,6 +289,7 @@ draw_trajectory(t_show, title="에이전트 궤적 한 건 : " + q_show["q"][:30
 
 b.md('''
 ### 셀 10 · 같은 입력, 다른 궤적 — 비결정성
+- 서로 독립인 실행은 `pmap` 으로 겹쳐 돈다(동시에 몇 개인지는 서버 설정에 달림). 지연 값은 겹쳐 돌 때 단독 실행보다 길게 나올 수 있다
 - 질문 하나를 **온도 0.7 로 여러 번** 돌린다(`sample` 번호를 달리 해 표본마다 따로 뽑음)
 - 에이전트는 **도구 순서 · 호출 횟수가 갈라질 수 있다**. 워크플로우는 같은 입력이면 **같은 경로**를 간다(분기가 없다)
 - 가로 = 몇 번째 행동, 세로 = 어떤 도구(단계). 선이 굵을수록 그 길로 간 횟수가 많다
@@ -293,8 +298,8 @@ b.code('''
 # 셀 10 · 같은 입력 · 다른 궤적
 qn = next(q for q in QD if q["유형"] == "이름+상품")
 N = CFG["비결정성_횟수"]
-ag_traj = [ag(SYSTEM_D, qn["q"], TD, temperature=CFG["온도"], sample=i) for i in range(N)]
-wf_paths = [wf_D(qn, temperature=CFG["온도"], sample=i)[2] for i in range(N)]
+ag_traj = pmap(lambda i: ag(SYSTEM_D, qn["q"], TD, temperature=CFG["온도"], sample=i), range(N))          # 표본 번호별로 서로 독립
+wf_paths = [r[2] for r in pmap(lambda i: wf_D(qn, temperature=CFG["온도"], sample=i), range(N))]
 fig, (a1, a2) = plt.subplots(1, 2, figsize=(14, 4.2))
 draw_trajectory_flow(wf_paths, ax=a1, title="워크플로우")
 draw_trajectory_flow(ag_traj, ax=a2, title="에이전트")
