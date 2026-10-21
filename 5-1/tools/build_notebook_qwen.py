@@ -44,6 +44,7 @@ CLIP 은 사진과 글을 **따로** 읽는 두 타워, 이 모델은 멀티모�
 
 - 실행 : **Run → Run All Cells**. 첫 실행은 모델 약 4GB 를 받는다. 받은 뒤 CPU 에서 전체 약 5분(사진 · 문서 임베딩이 대부분)
 - 메모리 : 모델을 float32 로 올리면 약 9GB. 모자라면 셀 1 `DTYPE = "bfloat16"`(약 4.5GB, 숫자가 소수 셋째 자리에서 조금 달라짐)
+- **필요 자원(2026-10-19 강사 PC 실측 · RTX 4080 · 컨테이너 RAM 상한 9GB)** : 최대 VRAM 약 11.4GB · RAM 약 8.9GB. 실습 기준 PC(VRAM 8GB · RAM 16GB)보다 많이 필요하다 — 이 실습을 그대로 실현하려면 이 정도 자원이 든다. VRAM 8GB PC 는 셀 1 `DTYPE = "bfloat16"`
 - 장치 · 설치는 01 과 같다 : 셀 1 `DEVICE`, PyTorch 가 없는 Jupyter(직접 설치)면 셀 2 가 처음 한 번 설치
 - 사진 출처 · 라이선스 : `5-1/images/images.csv`. 문서 스크린샷 `5-1/docs` 는 가상의 서식(`tools/make_docs.py`)
 ''')

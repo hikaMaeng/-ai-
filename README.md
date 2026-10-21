@@ -68,9 +68,10 @@ docker compose exec jupyter python -c "import torch; print(torch.cuda.get_device
 |---|---|---|
 | CPU | 노트북 i7 ≈ 데스크톱 코어 6개 | compose 상한 : Jupyter `LAB_CPUS=6` · DB `DB_CPUS=2` |
 | 메모리 | RAM 16GB 중 도커 12GB | compose 상한 : Jupyter `LAB_MEM=9g` · DB `DB_MEM=3g`(스왑 없음 → 넘으면 커널이 죽는다) |
-| VRAM | 8GB 목표 · **12GB 상한**(넘으면 실습 부적합, 넘는 부분은 오프로딩 · CPU) | 도커로 제한 불가 → 노트북마다 실행 기록에서 측정(이슈 #3) |
+| VRAM | 8GB 목표 · 12GB 가이드(넘는 부분은 오프로딩 · CPU) | 도커로 제한 불가 → 노트북마다 실행 기록에서 측정(이슈 #3) |
 
 - 강사 PC 처럼 큰 머신도 같은 상한으로 돌려 수강생 PC 에서 되는지 확인한다. 값은 `.env` 로 바꾼다(`env.example` 참고)
+- 가이드를 넘는 실습도 잘못된 것은 아니다 — 그 내용을 실현하려면 그만한 자원이 든다. 그런 노트북은 첫 셀에 **「필요 자원(실측)」** 을 적어 둔다(수강생은 실행 전에 자기 PC 와 비교)
 - 맥의 도커에는 NVIDIA GPU 가 없다 — GPU 실습은 CPU 로 돌며 크게 느려진다
 
 ### 5. 선택 서비스(profile)
