@@ -17,7 +17,7 @@
 ```
 docker-compose.yml     jupyter(8888) · db(5432) + 선택 pgadmin(5050) · comfy(8188)
 env.example            GPU 번호 · LM Studio 주소 설명 → .env 로 복사해서 쓴다
-docker/lab/            Jupyter 이미지(ai4-lab/jupyter-all) — 파이썬 커널 둘
+docker/lab/            Jupyter 이미지(ai4-lab/jupyter-all) — 파이썬 커널 둘 · cuda_init_check.py(CUDA 첫 초기화 진단, 8절)
 docker/db/             pgvector(PostgreSQL 17) + 한국어 형태소 분석기 · 최초 스키마(init/)
 docker/pgadmin/        pgAdmin 서버 등록 정보
 ```
@@ -98,3 +98,49 @@ LM Studio 는 컨테이너 밖, 내 PC 에서 돈다. 컨테이너 안의 `local
 bash 6-1/tools/run_notebooks.sh 01     # 음성 커널(voice)로 실행
 bash 6-2/tools/run_notebooks.sh        # 기본 커널
 ```
+
+### 8. CUDA 첫 초기화가 느릴 때(Windows · WSL2)
+
+증상 : 새 프로세스(노트북 커널 · `docker compose exec`)마다 첫 `torch.cuda.is_available()` 이 3분 반가량 걸린다. 같은 프로세스 안의 두 번째 호출부터는 0초. CPU 만 쓰는 모델도 첫 `backward()` 에서 같은 시간을 기다린다(역전파 엔진이 시작할 때 CUDA 장치 수를 묻기 때문).
+
+먼저 어느 층에서 시간을 쓰는지 가른다. 단계마다 새 프로세스를 띄워 각각을 「첫 호출」로 측정한다.
+
+```bash
+docker compose exec jupyter python /work/docker/lab/cuda_init_check.py
+```
+
+| 단계 | 정상일 때(강사 PC, 2026-10-21 07:28 UTC) | 느리면 |
+|---|---|---|
+| 드라이버 파일 읽기(9p) | 163 MB · 1.32~1.40 s | Windows DriverStore 공유(9p)가 느림 |
+| `nvidia-smi -L` | 0.06~0.07 s | NVML 경로 |
+| `cuInit`(ctypes) | 0.10~0.11 s | 드라이버 · WSL2 GPU 통로(`/dev/dxg`) |
+| `cudaGetDeviceCount`(libcudart 13) | 0.10 s | CUDA 런타임 |
+| `torch.cuda.is_available()` | 0.11 s(`import torch` 1.7~1.8 s) | torch 쪽(위 단계가 모두 빠를 때만) |
+
+`torch.cuda.is_available()` 은 `torch._C._cuda_getDeviceCount()` → `cudaGetDeviceCount` → `cuInit` 을 그대로 부른다. 그래서 위 층이 빠른데 torch 만 느린 경우가 아니면 이미지 · compose 를 고쳐도 소용없다. WSL2 에서 `libcuda.so.1.1` · `nvcubins.bin` · `libnvidia-ptxjitcompiler.so.1` 은 이미지 안이 아니라 `/usr/lib/wsl/drivers/` 에서 읽힌다. 이 경로는 Windows 드라이버를 9p 로 공유한 것이다.
+
+**강사 PC 기록(RTX 4080 `LAB_GPU=1` · 드라이버 617.14 · Docker Desktop WSL2 커널 6.6.87.2)**
+
+| 시각(UTC) | 측정 | 결과 |
+|---|---|---|
+| 10-20 03:03 | `docker compose start jupyter`(호스트 재부팅 뒤 첫 시작) | — |
+| 10-20 03:10 ~ 03:21 | 작은 학습 스크립트 · nbconvert 의 첫 학습 | 216.8 s · 214.9 s(학습 자체는 1.2~1.4 s) |
+| 10-20 03:21 ~ 03:28 | CPU 모델 첫 `backward()`, `CUDA_VISIBLE_DEVICES=` · 스레드 1 / 6 | 209.854 s / 209.850 s |
+| 10-20 03:29 ~ 03:36 | GPU 보임, 첫 `backward()` / `is_available()` | 211.554 s / 210.2 s |
+| 10-21 03:53 | 임베딩 모델 시험 스크립트의 `is_available()` | 210.3 s |
+| 10-21 04:00 ~ 04:31 | 같은 종류 스크립트(명령 전체 소요 275~417 s, 단계별 시간 없음) | 느렸던 것으로 추정되는 마지막 구간 |
+| 10-21 07:19 ~ 07:28 | 같은 명령 · `cuda_init_check.py` · 첫 `backward()` | `is_available()` 0.2~0.3 s · 첫 `backward()` 0.123~0.181 s |
+
+- 컨테이너는 10-20 03:03 부터 10-21 07:24 까지 재시작하지 않았다. 그런데 07:19 에는 이미 빨랐다 → 컨테이너 · 이미지를 건드리지 않았는데 저절로 풀렸다. 원인은 호스트(드라이버 · WSL2 GPU 통로) 쪽의 일시적인 상태로 본다. 느린 상태에서 `cuInit` 을 따로 측정하지 못해서 어느 층인지는 **확정하지 못했다**
+- 정상인 지금 같은 조건을 만들어 재현을 시도했으나 모두 0.2~0.3 s 였다(가설 기각) :
+  - 컨테이너 메모리 압박(익명 메모리 8.1 GB / 상한 9 GB)
+  - CPU 상한 포화(12 프로세스, 608 %)
+  - 같은 GPU 를 다른 프로세스가 100 % 사용(8192² 행렬곱 반복). 컨텍스트 생성 0.4 s
+  - 보이지 않는 3090 이 VRAM 21.5 GB · 사용률 48 % 인 상태
+  - `docker compose restart jupyter` 직후
+- 같은 시간대 Windows 시스템 이벤트에는 GPU 드라이버 재시작(TDR) · 장치 변경 기록이 없었다. Defender 정밀 검사도 없었다(빠른 검사 10-21 00:30~00:34 KST 뿐)
+
+회피책
+- 느린 상태에서는 **프로세스마다 한 번** 기다린다. 커널을 살려 두면 그 안의 셀은 다시 기다리지 않는다. 강의 전에 커널을 켜고 `import torch; torch.cuda.is_available()` 을 한 번 돌려 둔다. nbconvert 일괄 실행은 노트북마다 새 커널이라 노트북마다 기다린다
+- 재발하면 먼저 `cuda_init_check.py` 를 **처음 한 번** 돌려 느린 층을 기록한다(9p 읽기는 두 번째부터 캐시가 섞인다). 그 결과를 이 표에 더한다
+- 풀리지 않으면 Docker Desktop 재시작 → 그래도 안 되면 `wsl --shutdown` 뒤 Docker Desktop 재시작 순서로 해 본다. **이 조치가 효과 있는지는 아직 확인하지 못했다**(이번에는 조치 전에 저절로 풀렸다)
